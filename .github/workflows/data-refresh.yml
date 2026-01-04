@@ -1,0 +1,98 @@
+name: Data Refresh
+
+on:
+  schedule:
+    # Run every Sunday at 2 AM UTC
+    - cron: '0 2 * * 0'
+  workflow_dispatch:  # Allow manual trigger
+
+jobs:
+  refresh-data:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install dependencies
+        working-directory: backend
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Refresh Politicians Data
+        working-directory: backend
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          PROPUBLICA_API_KEY: ${{ secrets.PROPUBLICA_API_KEY }}
+        run: |
+          python -c "
+          import asyncio
+          from app.tasks.refresh_politicians import _refresh_all_politicians_async
+          result = asyncio.run(_refresh_all_politicians_async())
+          print(f'Politicians refreshed: {result}')
+          "
+
+      - name: Refresh Votes Data
+        working-directory: backend
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          PROPUBLICA_API_KEY: ${{ secrets.PROPUBLICA_API_KEY }}
+        run: |
+          python -c "
+          import asyncio
+          from app.tasks.refresh_votes import _refresh_all_votes_async
+          result = asyncio.run(_refresh_all_votes_async())
+          print(f'Votes refreshed: {result}')
+          "
+
+      - name: Refresh Finance Data
+        working-directory: backend
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          FEC_API_KEY: ${{ secrets.FEC_API_KEY }}
+        run: |
+          python -c "
+          import asyncio
+          from app.tasks.refresh_finance import _refresh_all_finance_async
+          result = asyncio.run(_refresh_all_finance_async())
+          print(f'Finance refreshed: {result}')
+          "
+
+      - name: Refresh Stock Trades Data
+        working-directory: backend
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          python -c "
+          import asyncio
+          from app.tasks.refresh_stocks import _refresh_all_stocks_async
+          result = asyncio.run(_refresh_all_stocks_async())
+          print(f'Stocks refreshed: {result}')
+          "
+
+      - name: Update Transparency Scores
+        working-directory: backend
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          python -c "
+          import asyncio
+          from app.database import SessionLocal
+          from app.services.transparency_score import update_all_transparency_scores
+          db = SessionLocal()
+          result = asyncio.run(update_all_transparency_scores(db))
+          db.close()
+          print(f'Transparency scores updated: {result}')
+          "
+
+      - name: Notify on failure
+        if: failure()
+        run: |
+          echo "Data refresh failed! Check the logs for details."
+          # Add notification logic here (Slack, email, etc.)

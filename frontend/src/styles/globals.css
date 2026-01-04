@@ -1,0 +1,64 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply antialiased;
+  }
+}
+
+@layer components {
+  .card {
+    @apply bg-white rounded-lg shadow-md p-6;
+  }
+
+  .btn-primary {
+    @apply bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 transition-colors;
+  }
+
+  .btn-secondary {
+    @apply bg-gray-200 text-gray-800 px-4 py-2 rounded-md hover:bg-gray-300 transition-colors;
+  }
+
+  .party-badge {
+    @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium;
+  }
+
+  .party-badge-d {
+    @apply bg-blue-100 text-blue-800;
+  }
+
+  .party-badge-r {
+    @apply bg-red-100 text-red-800;
+  }
+
+  .party-badge-i {
+    @apply bg-purple-100 text-purple-800;
+  }
+
+  .transparency-score {
+    @apply text-2xl font-bold;
+  }
+
+  .transparency-score-high {
+    @apply text-green-600;
+  }
+
+  .transparency-score-medium {
+    @apply text-yellow-600;
+  }
+
+  .transparency-score-low {
+    @apply text-red-600;
+  }
+}
+
+/* Mapbox customizations */
+.mapboxgl-popup-content {
+  @apply p-4 rounded-lg shadow-lg;
+}
+
+.mapboxgl-ctrl-logo {
+  display: none !important;
+}
