@@ -1,10 +1,14 @@
 import { useEffect, useRef, useState } from 'react'
 import mapboxgl from 'mapbox-gl'
+import 'mapbox-gl/dist/mapbox-gl.css'
 import { useNavigate } from 'react-router-dom'
 import type { StateAggregation } from '../../api/types'
 
 // Mapbox access token from environment
-mapboxgl.accessToken = import.meta.env.VITE_MAPBOX_ACCESS_TOKEN || ''
+const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_ACCESS_TOKEN || ''
+if (MAPBOX_TOKEN) {
+  mapboxgl.accessToken = MAPBOX_TOKEN
+}
 
 interface USMapProps {
   statesData: StateAggregation[]
@@ -34,11 +38,18 @@ export default function USMap({ statesData, onStateClick }: USMapProps) {
   const map = useRef<mapboxgl.Map | null>(null)
   const navigate = useNavigate()
   const [mapLoaded, setMapLoaded] = useState(false)
+  const [mapError, setMapError] = useState<string | null>(null)
 
   useEffect(() => {
     if (!mapContainer.current || map.current) return
 
-    map.current = new mapboxgl.Map({
+    if (!MAPBOX_TOKEN) {
+      setMapError('Mapbox token not configured. Please set VITE_MAPBOX_ACCESS_TOKEN.')
+      return
+    }
+
+    try {
+      map.current = new mapboxgl.Map({
       container: mapContainer.current,
       style: 'mapbox://styles/mapbox/light-v11',
       center: [-98.5795, 39.8283], // Center of US
@@ -52,6 +63,16 @@ export default function USMap({ statesData, onStateClick }: USMapProps) {
     map.current.on('load', () => {
       setMapLoaded(true)
     })
+
+    map.current.on('error', (e) => {
+      console.error('Mapbox error:', e)
+      setMapError('Failed to load map. Please check your Mapbox token.')
+    })
+
+    } catch (err) {
+      console.error('Map initialization error:', err)
+      setMapError('Failed to initialize map.')
+    }
 
     return () => {
       map.current?.remove()
@@ -212,6 +233,17 @@ export default function USMap({ statesData, onStateClick }: USMapProps) {
         }
       })
   }, [mapLoaded, statesData, navigate, onStateClick])
+
+  if (mapError) {
+    return (
+      <div className="relative w-full h-full min-h-[500px] rounded-lg overflow-hidden bg-gray-100 flex items-center justify-center">
+        <div className="text-center p-8">
+          <p className="text-red-600 font-medium">{mapError}</p>
+          <p className="text-gray-500 text-sm mt-2">The interactive map requires a valid Mapbox token.</p>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="relative w-full h-full min-h-[500px] rounded-lg overflow-hidden">
