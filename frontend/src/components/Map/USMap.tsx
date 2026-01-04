@@ -86,16 +86,23 @@ export default function USMap({ statesData, onStateClick }: USMapProps) {
 
     // Create a lookup for state data
     const stateDataMap = new Map(statesData.map(s => [s.state, s]))
+    console.log('States data received:', statesData.length, 'states')
+    console.log('Sample state data:', statesData[0])
 
     // Fetch and add states layer
     fetch(US_STATES_GEOJSON)
       .then(res => res.json())
       .then(geojson => {
+        console.log('GeoJSON loaded:', geojson.features.length, 'features')
+
         // Enrich GeoJSON with our data
+        let matchedCount = 0
         geojson.features = geojson.features.map((feature: any) => {
           const stateName = feature.properties.name
           const stateCode = STATE_CODES[stateName]
           const data = stateDataMap.get(stateCode)
+
+          if (data) matchedCount++
 
           return {
             ...feature,
@@ -106,6 +113,7 @@ export default function USMap({ statesData, onStateClick }: USMapProps) {
             },
           }
         })
+        console.log('Matched states:', matchedCount, 'out of', geojson.features.length)
 
         // Add source
         if (map.current?.getSource('states')) {
@@ -124,19 +132,13 @@ export default function USMap({ statesData, onStateClick }: USMapProps) {
             paint: {
               'fill-color': [
                 'case',
-                ['>', ['get', 'democrats'], ['get', 'republicans']],
+                ['>', ['coalesce', ['get', 'democrats'], 0], ['coalesce', ['get', 'republicans'], 0]],
                 '#2563eb', // Democrat blue
-                ['>', ['get', 'republicans'], ['get', 'democrats']],
+                ['>', ['coalesce', ['get', 'republicans'], 0], ['coalesce', ['get', 'democrats'], 0]],
                 '#dc2626', // Republican red
-                '#7c3aed', // Purple for tie/independent
+                '#9ca3af', // Gray for no data or tie
               ],
-              'fill-opacity': [
-                'interpolate',
-                ['linear'],
-                ['coalesce', ['get', 'avg_transparency_score'], 50],
-                0, 0.3,
-                100, 0.8,
-              ],
+              'fill-opacity': 0.7,
             },
           })
 
