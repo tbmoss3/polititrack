@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter
 
-from app.api import politicians, votes, bills, finance, stocks, map
+from app.api import politicians, votes, bills, finance, stocks, map, admin
 
 api_router = APIRouter()
 
@@ -12,3 +12,4 @@ api_router.include_router(bills.router, prefix="/bills", tags=["bills"])
 api_router.include_router(finance.router, prefix="/finance", tags=["finance"])
 api_router.include_router(stocks.router, prefix="/stocks", tags=["stocks"])
 api_router.include_router(map.router, prefix="/map", tags=["map"])
+api_router.include_router(admin.router, prefix="/admin", tags=["admin"])
