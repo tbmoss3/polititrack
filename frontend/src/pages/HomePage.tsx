@@ -70,7 +70,7 @@ export default function HomePage() {
         <h2 className="text-xl font-semibold text-gray-900 mb-4">About This Project</h2>
         <p className="text-gray-600 leading-relaxed">
           PolitiTrack is an open-source platform that makes political data accessible to average voters.
-          We aggregate data from official sources including the ProPublica Congress API, FEC campaign
+          We aggregate data from official sources including the Congress.gov API, FEC campaign
           finance records, and House/Senate stock trade disclosures. Our transparency score helps you
           understand how promptly your representatives disclose their financial activities.
         </p>

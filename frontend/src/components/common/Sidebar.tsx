@@ -7,6 +7,9 @@ export default function Sidebar() {
     queryFn: getPartyBreakdown,
   })
 
+  const senate = breakdown?.senate || { D: 0, R: 0, I: 0 }
+  const house = breakdown?.house || { D: 0, R: 0, I: 0 }
+
   return (
     <aside className="hidden lg:block w-64 bg-white border-r border-gray-200 min-h-screen p-6">
       <div className="space-y-6">
@@ -14,27 +17,25 @@ export default function Sidebar() {
           <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">
             Congress Overview
           </h3>
-          {breakdown && (
-            <div className="space-y-4">
-              <div className="card !p-4">
-                <h4 className="font-medium text-gray-700 mb-2">Senate</h4>
-                <div className="flex items-center space-x-2 text-sm">
-                  <span className="party-badge party-badge-d">D: {breakdown.senate.D}</span>
-                  <span className="party-badge party-badge-r">R: {breakdown.senate.R}</span>
-                  <span className="party-badge party-badge-i">I: {breakdown.senate.I}</span>
-                </div>
-              </div>
-
-              <div className="card !p-4">
-                <h4 className="font-medium text-gray-700 mb-2">House</h4>
-                <div className="flex items-center space-x-2 text-sm">
-                  <span className="party-badge party-badge-d">D: {breakdown.house.D}</span>
-                  <span className="party-badge party-badge-r">R: {breakdown.house.R}</span>
-                  <span className="party-badge party-badge-i">I: {breakdown.house.I}</span>
-                </div>
+          <div className="space-y-4">
+            <div className="card !p-4">
+              <h4 className="font-medium text-gray-700 mb-2">Senate</h4>
+              <div className="flex items-center space-x-2 text-sm">
+                <span className="party-badge party-badge-d">D: {senate.D ?? 0}</span>
+                <span className="party-badge party-badge-r">R: {senate.R ?? 0}</span>
+                <span className="party-badge party-badge-i">I: {senate.I ?? 0}</span>
               </div>
             </div>
-          )}
+
+            <div className="card !p-4">
+              <h4 className="font-medium text-gray-700 mb-2">House</h4>
+              <div className="flex items-center space-x-2 text-sm">
+                <span className="party-badge party-badge-d">D: {house.D ?? 0}</span>
+                <span className="party-badge party-badge-r">R: {house.R ?? 0}</span>
+                <span className="party-badge party-badge-i">I: {house.I ?? 0}</span>
+              </div>
+            </div>
+          </div>
         </div>
 
         <div>
@@ -59,7 +60,7 @@ export default function Sidebar() {
             Data Sources
           </h3>
           <ul className="text-xs text-gray-500 space-y-1">
-            <li>ProPublica Congress API</li>
+            <li>Congress.gov API</li>
             <li>FEC Campaign Finance</li>
             <li>House/Senate Stock Watcher</li>
           </ul>
