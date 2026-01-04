@@ -6,6 +6,7 @@ import type { StateAggregation } from '../../api/types'
 
 // Mapbox access token from environment
 const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_ACCESS_TOKEN || ''
+console.log('Mapbox token configured:', MAPBOX_TOKEN ? 'Yes (length: ' + MAPBOX_TOKEN.length + ')' : 'No')
 if (MAPBOX_TOKEN) {
   mapboxgl.accessToken = MAPBOX_TOKEN
 }
