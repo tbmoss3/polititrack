@@ -146,6 +146,23 @@ class CongressGovClient:
         return data.get("actions", [])
 
 
+# State name to 2-letter code mapping
+STATE_CODES = {
+    "Alabama": "AL", "Alaska": "AK", "Arizona": "AZ", "Arkansas": "AR", "California": "CA",
+    "Colorado": "CO", "Connecticut": "CT", "Delaware": "DE", "Florida": "FL", "Georgia": "GA",
+    "Hawaii": "HI", "Idaho": "ID", "Illinois": "IL", "Indiana": "IN", "Iowa": "IA",
+    "Kansas": "KS", "Kentucky": "KY", "Louisiana": "LA", "Maine": "ME", "Maryland": "MD",
+    "Massachusetts": "MA", "Michigan": "MI", "Minnesota": "MN", "Mississippi": "MS", "Missouri": "MO",
+    "Montana": "MT", "Nebraska": "NE", "Nevada": "NV", "New Hampshire": "NH", "New Jersey": "NJ",
+    "New Mexico": "NM", "New York": "NY", "North Carolina": "NC", "North Dakota": "ND", "Ohio": "OH",
+    "Oklahoma": "OK", "Oregon": "OR", "Pennsylvania": "PA", "Rhode Island": "RI", "South Carolina": "SC",
+    "South Dakota": "SD", "Tennessee": "TN", "Texas": "TX", "Utah": "UT", "Vermont": "VT",
+    "Virginia": "VA", "Washington": "WA", "West Virginia": "WV", "Wisconsin": "WI", "Wyoming": "WY",
+    "District of Columbia": "DC", "Puerto Rico": "PR", "Guam": "GU", "American Samoa": "AS",
+    "U.S. Virgin Islands": "VI", "Northern Mariana Islands": "MP",
+}
+
+
 def transform_member_to_politician(member: dict) -> dict:
     """Transform Congress.gov member data to our Politician schema."""
     # Parse name
@@ -169,12 +186,16 @@ def transform_member_to_politician(member: dict) -> dict:
             except (ValueError, TypeError):
                 district = None
 
+    # Convert state name to 2-letter code
+    state_name = member.get("state", "")
+    state_code = STATE_CODES.get(state_name, state_name[:2].upper() if state_name else None)
+
     return {
         "bioguide_id": member.get("bioguideId"),
         "first_name": first_name,
         "last_name": last_name,
         "party": member.get("partyName", "")[:1].upper(),  # D, R, or I
-        "state": member.get("state"),
+        "state": state_code,
         "district": district,
         "chamber": chamber,
         "in_office": member.get("currentMember", False),
