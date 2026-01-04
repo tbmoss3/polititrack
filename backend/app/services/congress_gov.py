@@ -145,6 +145,54 @@ class CongressGovClient:
         data = await self._request(f"bill/{congress}/{bill_type}/{bill_number}/actions")
         return data.get("actions", [])
 
+    async def get_member_votes(self, bioguide_id: str, limit: int = 100, offset: int = 0) -> list[dict]:
+        """
+        Get voting record for a specific member.
+
+        Args:
+            bioguide_id: The bioguide ID of the member
+            limit: Number of results
+            offset: Pagination offset
+
+        Returns:
+            List of votes
+        """
+        try:
+            data = await self._request(
+                f"member/{bioguide_id}/votes",
+                {"limit": limit, "offset": offset}
+            )
+            return data.get("votes", [])
+        except Exception as e:
+            print(f"Error fetching votes for {bioguide_id}: {e}")
+            return []
+
+    async def get_all_member_votes(self, bioguide_id: str, max_votes: int = 500) -> list[dict]:
+        """
+        Get all votes for a member (handles pagination).
+
+        Args:
+            bioguide_id: The bioguide ID of the member
+            max_votes: Maximum number of votes to fetch
+
+        Returns:
+            Complete list of votes
+        """
+        all_votes = []
+        offset = 0
+        limit = 100
+
+        while len(all_votes) < max_votes:
+            votes = await self.get_member_votes(bioguide_id, limit, offset)
+            if not votes:
+                break
+            all_votes.extend(votes)
+            if len(votes) < limit:
+                break
+            offset += limit
+
+        return all_votes[:max_votes]
+
 
 # State name to 2-letter code mapping
 STATE_CODES = {
