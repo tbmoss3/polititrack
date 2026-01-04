@@ -4,9 +4,9 @@ import 'mapbox-gl/dist/mapbox-gl.css'
 import { useNavigate } from 'react-router-dom'
 import type { StateAggregation } from '../../api/types'
 
-// Mapbox access token from environment
-const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_ACCESS_TOKEN || ''
-console.log('Mapbox token configured:', MAPBOX_TOKEN ? 'Yes (length: ' + MAPBOX_TOKEN.length + ')' : 'No')
+// Mapbox access token - public tokens (pk.*) are safe to expose
+// They are secured via domain restrictions in Mapbox dashboard
+const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_ACCESS_TOKEN || 'pk.eyJ1IjoiYmVudG9ubW9zcyIsImEiOiJjbWswN3AzYzM2eWNnM2VwczY1cTVqbm45In0.Hal891JmlnwoYSUv8K99Jg'
 if (MAPBOX_TOKEN) {
   mapboxgl.accessToken = MAPBOX_TOKEN
 }
