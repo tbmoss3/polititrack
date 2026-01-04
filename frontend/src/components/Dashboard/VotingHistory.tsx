@@ -5,8 +5,6 @@ interface VotingHistoryProps {
   summary: VotingSummary | null
 }
 
-const COLORS = ['#22c55e', '#ef4444', '#6b7280', '#3b82f6']
-
 export default function VotingHistory({ summary }: VotingHistoryProps) {
   if (!summary) {
     return (
