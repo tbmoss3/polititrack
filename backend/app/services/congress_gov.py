@@ -190,6 +190,11 @@ def transform_member_to_politician(member: dict) -> dict:
     state_name = member.get("state", "")
     state_code = STATE_CODES.get(state_name, state_name[:2].upper() if state_name else None)
 
+    # Check if in office - if they have terms in current Congress, they're in office
+    # The currentMember field isn't always in the list response, so we default to True
+    # for members retrieved from the current Congress endpoint
+    in_office = member.get("currentMember", True)
+
     return {
         "bioguide_id": member.get("bioguideId"),
         "first_name": first_name,
@@ -198,7 +203,7 @@ def transform_member_to_politician(member: dict) -> dict:
         "state": state_code,
         "district": district,
         "chamber": chamber,
-        "in_office": member.get("currentMember", False),
+        "in_office": in_office,
         "twitter_handle": None,
         "website_url": member.get("officialWebsiteUrl"),
         "photo_url": member.get("depiction", {}).get("imageUrl"),
