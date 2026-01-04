@@ -75,6 +75,77 @@ async def run_politician_population():
         db.close()
 
 
+@router.post("/populate-politicians-sync")
+async def populate_politicians_sync():
+    """
+    Synchronous version of politician population for debugging.
+    Returns results directly instead of running in background.
+    """
+    if not settings.congress_gov_api_key:
+        raise HTTPException(status_code=500, detail="Congress.gov API key not configured")
+
+    client = CongressGovClient()
+    db = SessionLocal()
+
+    try:
+        updated = 0
+        created = 0
+
+        # Current Congress (119th as of 2025)
+        congress = 119
+
+        members = await client.get_all_members(congress)
+
+        for member in members:
+            data = transform_member_to_politician(member)
+
+            if not data.get("bioguide_id"):
+                continue
+
+            existing = db.query(Politician).filter(
+                Politician.bioguide_id == data["bioguide_id"]
+            ).first()
+
+            if existing:
+                for key, value in data.items():
+                    if value is not None:
+                        setattr(existing, key, value)
+                updated += 1
+            else:
+                politician = Politician(**data)
+                db.add(politician)
+                created += 1
+
+        db.commit()
+        return {"status": "complete", "created": created, "updated": updated, "total_members_found": len(members)}
+
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        db.close()
+
+
+@router.get("/test-congress-api")
+async def test_congress_api():
+    """Test the Congress.gov API connection."""
+    if not settings.congress_gov_api_key:
+        return {"error": "API key not configured", "key_length": 0}
+
+    client = CongressGovClient()
+    try:
+        members = await client.get_members(congress=119, limit=5)
+        return {
+            "status": "ok",
+            "key_configured": True,
+            "key_length": len(settings.congress_gov_api_key),
+            "sample_members": len(members),
+            "first_member": members[0] if members else None
+        }
+    except Exception as e:
+        return {"status": "error", "error": str(e), "key_length": len(settings.congress_gov_api_key)}
+
+
 @router.get("/stats")
 async def get_stats():
     """Get database statistics."""
