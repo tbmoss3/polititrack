@@ -20,10 +20,13 @@ export default function PoliticianCard({ politician }: PoliticianCardProps) {
     ID: 'Independent',
   }[politician.party || 'I'] || 'Unknown'
 
+  // Convert to number in case it comes as string from API
+  const score = politician.transparency_score ? Number(politician.transparency_score) : null
+
   const transparencyClass = clsx('transparency-score', {
-    'transparency-score-high': politician.transparency_score && politician.transparency_score >= 70,
-    'transparency-score-medium': politician.transparency_score && politician.transparency_score >= 40 && politician.transparency_score < 70,
-    'transparency-score-low': politician.transparency_score && politician.transparency_score < 40,
+    'transparency-score-high': score && score >= 70,
+    'transparency-score-medium': score && score >= 40 && score < 70,
+    'transparency-score-low': score && score < 40,
   })
 
   return (
@@ -57,11 +60,11 @@ export default function PoliticianCard({ politician }: PoliticianCardProps) {
         </div>
 
         <div className="flex-shrink-0 text-right">
-          {politician.transparency_score !== null ? (
+          {score !== null ? (
             <div>
               <p className="text-xs text-gray-500 uppercase">Transparency</p>
               <p className={transparencyClass}>
-                {politician.transparency_score.toFixed(0)}
+                {score.toFixed(0)}
               </p>
             </div>
           ) : (
