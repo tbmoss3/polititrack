@@ -23,7 +23,7 @@ class Settings(BaseSettings):
     database_url: str = "postgresql://postgres:postgres@localhost:5432/polititrack"
 
     # External APIs
-    propublica_api_key: str = ""
+    congress_gov_api_key: str = ""
     fec_api_key: str = ""
     openai_api_key: str = ""
     anthropic_api_key: str = ""

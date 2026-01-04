@@ -1,21 +1,21 @@
-"""Celery task to refresh politician data from ProPublica."""
+"""Celery task to refresh politician data from Congress.gov."""
 
 import asyncio
 from app.tasks.celery_app import celery_app
 from app.database import SessionLocal
 from app.models import Politician
-from app.services.propublica import ProPublicaClient, transform_member_to_politician
+from app.services.congress_gov import CongressGovClient, transform_member_to_politician
 
 
 @celery_app.task(name="app.tasks.refresh_politicians.refresh_all_politicians")
 def refresh_all_politicians():
-    """Refresh all politician data from ProPublica Congress API."""
+    """Refresh all politician data from Congress.gov API."""
     return asyncio.run(_refresh_all_politicians_async())
 
 
 async def _refresh_all_politicians_async():
     """Async implementation of politician refresh."""
-    client = ProPublicaClient()
+    client = CongressGovClient()
     db = SessionLocal()
 
     try:
@@ -25,28 +25,31 @@ async def _refresh_all_politicians_async():
         # Current Congress (118th as of 2024)
         congress = 118
 
-        for chamber in ["house", "senate"]:
-            members = await client.get_members(congress, chamber)
+        # Get all members
+        members = await client.get_all_members(congress)
 
-            for member in members:
-                data = transform_member_to_politician(member)
+        for member in members:
+            data = transform_member_to_politician(member)
 
-                # Check if politician exists
-                existing = db.query(Politician).filter(
-                    Politician.bioguide_id == data["bioguide_id"]
-                ).first()
+            if not data.get("bioguide_id"):
+                continue
 
-                if existing:
-                    # Update existing
-                    for key, value in data.items():
-                        if value is not None:
-                            setattr(existing, key, value)
-                    updated += 1
-                else:
-                    # Create new
-                    politician = Politician(**data)
-                    db.add(politician)
-                    created += 1
+            # Check if politician exists
+            existing = db.query(Politician).filter(
+                Politician.bioguide_id == data["bioguide_id"]
+            ).first()
+
+            if existing:
+                # Update existing
+                for key, value in data.items():
+                    if value is not None:
+                        setattr(existing, key, value)
+                updated += 1
+            else:
+                # Create new
+                politician = Politician(**data)
+                db.add(politician)
+                created += 1
 
         db.commit()
         return {"updated": updated, "created": created}
@@ -66,7 +69,7 @@ def refresh_single_politician(bioguide_id: str):
 
 async def _refresh_single_politician_async(bioguide_id: str):
     """Async implementation of single politician refresh."""
-    client = ProPublicaClient()
+    client = CongressGovClient()
     db = SessionLocal()
 
     try:
