@@ -9,11 +9,15 @@ export default function HomePage() {
     queryFn: getStatesAggregation,
   })
 
+  console.log('HomePage - isLoading:', isLoading, 'error:', error, 'data:', data)
+  console.log('HomePage - states count:', data?.states?.length)
+
   if (isLoading) {
     return <Loading message="Loading map data..." />
   }
 
   if (error) {
+    console.error('HomePage error:', error)
     return (
       <div className="text-center py-8">
         <p className="text-red-600">Failed to load map data. Please try again.</p>
