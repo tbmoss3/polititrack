@@ -1,6 +1,7 @@
 import axios from 'axios'
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || ''
+// API URL - fallback to production backend if env var not set at build time
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://backend-polititrack-production.up.railway.app'
 
 export const apiClient = axios.create({
   baseURL: `${API_BASE_URL}/api`,
