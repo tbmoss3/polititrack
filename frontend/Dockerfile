@@ -1,4 +1,5 @@
-FROM node:20-alpine
+# Build stage
+FROM node:20-alpine AS builder
 
 WORKDIR /app
 
@@ -11,8 +12,22 @@ RUN npm install
 # Copy source code
 COPY . .
 
-# Expose Vite dev server port
-EXPOSE 5173
+# Build the app
+RUN npm run build
 
-# Start development server
-CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0"]
+# Production stage
+FROM node:20-alpine
+
+WORKDIR /app
+
+# Install serve to run the static files
+RUN npm install -g serve
+
+# Copy built files from builder
+COPY --from=builder /app/dist ./dist
+
+# Expose port
+EXPOSE 3000
+
+# Serve the built app
+CMD ["serve", "-s", "dist", "-l", "3000"]
