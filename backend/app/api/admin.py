@@ -180,14 +180,25 @@ async def test_votes(bioguide_id: str):
 
 
 @router.get("/test-chamber-votes/{chamber}")
-async def test_chamber_votes(chamber: str, limit: int = 3):
+async def test_chamber_votes(chamber: str, congress: int = 119, limit: int = 3):
     """Test fetching votes by chamber to see response structure."""
     if not settings.congress_gov_api_key:
         return {"error": "API key not configured"}
 
     client = CongressGovClient()
     try:
-        votes = await client.get_votes(congress=119, chamber=chamber, limit=limit)
+        # Also try the raw request to see what we get
+        import httpx
+        params = {"api_key": settings.congress_gov_api_key, "format": "json", "limit": limit}
+        async with httpx.AsyncClient() as http_client:
+            response = await http_client.get(
+                f"https://api.congress.gov/v3/vote/{congress}/{chamber}",
+                params=params,
+                timeout=30.0,
+            )
+            raw_data = response.json()
+
+        votes = await client.get_votes(congress=congress, chamber=chamber, limit=limit)
 
         # If we got votes, also try to get details for the first one
         vote_detail = None
@@ -195,18 +206,22 @@ async def test_chamber_votes(chamber: str, limit: int = 3):
             first_vote = votes[0]
             roll_number = first_vote.get("rollNumber") or first_vote.get("number")
             if roll_number:
-                vote_detail = await client.get_vote_details(119, chamber, int(roll_number))
+                vote_detail = await client.get_vote_details(congress, chamber, int(roll_number))
 
         return {
             "status": "ok",
+            "congress": congress,
             "chamber": chamber,
+            "raw_keys": list(raw_data.keys()) if isinstance(raw_data, dict) else str(type(raw_data)),
+            "raw_sample": raw_data,
             "votes_count": len(votes),
             "votes_sample": votes[:2] if votes else [],
             "vote_detail_keys": list(vote_detail.keys()) if vote_detail else [],
             "vote_detail_sample": vote_detail
         }
     except Exception as e:
-        return {"status": "error", "error": str(e)}
+        import traceback
+        return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
 
 
 @router.get("/stats")
