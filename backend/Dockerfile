@@ -2,11 +2,23 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-# Install system dependencies
+# Install system dependencies including Chromium for Selenium
 RUN apt-get update && apt-get install -y \
     gcc \
     libpq-dev \
+    wget \
+    unzip \
+    curl \
+    gnupg \
+    chromium \
+    chromium-driver \
+    xvfb \
+    && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
+
+# Set Chrome/Chromium environment variables for Selenium
+ENV GOOGLE_CHROME_BIN=/usr/bin/chromium \
+    CHROMEDRIVER_PATH=/usr/bin/chromedriver
 
 # Install Python dependencies
 COPY requirements.txt .

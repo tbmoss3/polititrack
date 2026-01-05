@@ -4,208 +4,217 @@ Sources:
 - House: disclosures-clerk.house.gov/FinancialDisclosure
 - Senate: efdsearch.senate.gov
 
-These scrapers access the official government sources directly, providing
-authoritative and current data on congressional stock trades.
+These scrapers use Selenium WebDriver to access JavaScript-heavy official
+government sources, providing authoritative and current data on congressional
+stock trades.
 """
 
-import httpx
+import os
 import asyncio
 import re
 from datetime import datetime, timedelta
 from bs4 import BeautifulSoup
 from typing import Optional
-from tenacity import retry, stop_after_attempt, wait_exponential
+from selenium import webdriver
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.common.exceptions import TimeoutException, NoSuchElementException
+
+
+def init_driver():
+    """Initialize headless Chrome WebDriver for Railway environment."""
+    service = Service(os.environ.get("CHROMEDRIVER_PATH", "/usr/bin/chromedriver"))
+    options = Options()
+
+    # Headless mode for server environment
+    options.add_argument("--headless=new")
+    options.add_argument("--no-sandbox")
+    options.add_argument("--disable-dev-shm-usage")
+    options.add_argument("--disable-gpu")
+    options.add_argument("--disable-extensions")
+    options.add_argument("--disable-blink-features=AutomationControlled")
+    options.add_argument("--blink-settings=imagesEnabled=false")
+    options.add_argument("--window-size=1920,1080")
+
+    # User agent to appear as normal browser
+    options.add_argument(
+        "user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
+    )
+
+    # Set Chrome binary location from environment
+    chrome_bin = os.environ.get("GOOGLE_CHROME_BIN", "/usr/bin/chromium")
+    if os.path.exists(chrome_bin):
+        options.binary_location = chrome_bin
+
+    driver = webdriver.Chrome(service=service, options=options)
+    driver.set_page_load_timeout(60)
+    return driver
 
 
 class SenateDisclosureScraper:
     """Scraper for Senate Electronic Financial Disclosure (EFD) system.
 
     The Senate EFD system at efdsearch.senate.gov provides periodic transaction
-    reports (PTRs) filed by senators. This scraper:
-    1. Establishes a session and gets CSRF token
-    2. Searches for PTRs via the internal API
-    3. Parses individual PTR pages for transaction details
+    reports (PTRs) filed by senators. This scraper uses Selenium to:
+    1. Accept the usage agreement
+    2. Search for PTRs via the search form
+    3. Parse individual PTR pages for transaction details
     """
 
     BASE_URL = "https://efdsearch.senate.gov"
     SEARCH_URL = f"{BASE_URL}/search/"
     REPORT_URL = f"{BASE_URL}/search/view/ptr/"
 
-    def __init__(self):
-        self.csrf_token: Optional[str] = None
-        self.cookies: dict = {}
-
-    async def _get_csrf_token(self, client: httpx.AsyncClient) -> str:
-        """Get CSRF token from the search page."""
-        response = await client.get(
-            self.SEARCH_URL,
-            follow_redirects=True,
-            timeout=30.0
-        )
-
-        # Store cookies
-        self.cookies = dict(response.cookies)
-
-        # Extract CSRF token from the page
-        soup = BeautifulSoup(response.text, 'html.parser')
-
-        # Look for csrftoken in cookies or hidden input
-        csrf_input = soup.find('input', {'name': 'csrfmiddlewaretoken'})
-        if csrf_input:
-            return csrf_input.get('value', '')
-
-        # Check cookies
-        if 'csrftoken' in self.cookies:
-            return self.cookies['csrftoken']
-
-        # Try to find in response cookies
-        for cookie in response.cookies.jar:
-            if cookie.name == 'csrftoken':
-                return cookie.value
-
-        return ''
-
-    async def _accept_agreement(self, client: httpx.AsyncClient) -> bool:
-        """Accept the usage agreement on the search page."""
-        if not self.csrf_token:
-            self.csrf_token = await self._get_csrf_token(client)
-
-        # The agreement is typically accepted by POSTing to the search page
-        # with the agreement checkbox value
-        headers = {
-            'X-CSRFToken': self.csrf_token,
-            'Referer': self.SEARCH_URL,
-            'Content-Type': 'application/x-www-form-urlencoded',
-        }
-
-        data = {
-            'csrfmiddlewaretoken': self.csrf_token,
-            'prohibition_agreement': '1',  # Accept agreement
-        }
-
-        response = await client.post(
-            self.SEARCH_URL,
-            data=data,
-            headers=headers,
-            cookies=self.cookies,
-            follow_redirects=True,
-            timeout=30.0
-        )
-
-        self.cookies.update(dict(response.cookies))
-        return response.status_code == 200
-
-    async def _search_ptrs(
+    def _accept_agreement_and_search(
         self,
-        client: httpx.AsyncClient,
-        first_name: str = "",
-        last_name: str = "",
-        start_date: Optional[str] = None,
-        limit: int = 100,
-        offset: int = 0
+        driver: webdriver.Chrome,
+        start_date: str,
+        end_date: str
     ) -> list[dict]:
-        """Search for Periodic Transaction Reports."""
-        if not self.csrf_token:
-            self.csrf_token = await self._get_csrf_token(client)
-            await self._accept_agreement(client)
-
-        # Default to last 2 years if no start date
-        if not start_date:
-            start_date = (datetime.now() - timedelta(days=730)).strftime("%m/%d/%Y")
-
-        headers = {
-            'X-CSRFToken': self.csrf_token,
-            'Referer': self.SEARCH_URL,
-            'Content-Type': 'application/x-www-form-urlencoded',
-            'X-Requested-With': 'XMLHttpRequest',
-        }
-
-        # The Senate EFD uses specific form field names
-        data = {
-            'csrfmiddlewaretoken': self.csrf_token,
-            'first_name': first_name,
-            'last_name': last_name,
-            'filer_type': '1',  # Senators
-            'report_type': '11',  # Periodic Transaction Reports
-            'submitted_start_date': start_date,
-            'submitted_end_date': datetime.now().strftime("%m/%d/%Y"),
-        }
+        """Accept agreement and search for PTRs using Selenium."""
+        results = []
 
         try:
-            # Try the search home page first to get proper session
-            home_response = await client.get(
-                f"{self.SEARCH_URL}home/",
-                cookies=self.cookies,
-                timeout=30.0,
-                follow_redirects=True
-            )
-            self.cookies.update(dict(home_response.cookies))
+            # Navigate to search page
+            driver.get(self.SEARCH_URL)
 
-            response = await client.post(
-                f"{self.SEARCH_URL}report/data/",
-                data=data,
-                headers=headers,
-                cookies=self.cookies,
-                timeout=30.0
+            # Wait for page to load
+            WebDriverWait(driver, 10).until(
+                EC.presence_of_element_located((By.TAG_NAME, "body"))
             )
 
-            print(f"Senate search response status: {response.status_code}")
-            print(f"Senate search response headers: {dict(response.headers)[:200] if response.headers else 'none'}")
+            # Check for and accept the agreement checkbox
+            try:
+                agreement_checkbox = WebDriverWait(driver, 5).until(
+                    EC.presence_of_element_located((By.ID, "agree_statement"))
+                )
+                if not agreement_checkbox.is_selected():
+                    agreement_checkbox.click()
 
-            if response.status_code == 200:
-                try:
-                    result = response.json()
-                    print(f"Senate search result keys: {result.keys() if isinstance(result, dict) else 'not a dict'}")
-                    return result.get('data', [])
-                except Exception as e:
-                    print(f"Senate JSON parse error: {e}")
-                    print(f"Response text: {response.text[:500]}")
-                    return []
-            else:
-                print(f"Senate PTR search failed: {response.status_code}")
-                print(f"Response: {response.text[:500]}")
-                return []
+                # Click submit button for agreement
+                submit_btn = driver.find_element(By.CSS_SELECTOR, "button[type='submit']")
+                submit_btn.click()
+
+                # Wait for search page to load after agreement
+                WebDriverWait(driver, 10).until(
+                    EC.presence_of_element_located((By.ID, "filer_type"))
+                )
+            except TimeoutException:
+                # Agreement may already be accepted or not present
+                print("Agreement already accepted or not found, continuing...")
+
+            # Fill in search form
+            try:
+                # Select filer type (Senator)
+                filer_type = driver.find_element(By.ID, "filer_type")
+                filer_type.send_keys("1")  # 1 = Senator
+
+                # Select report type (Periodic Transaction Report)
+                report_type = driver.find_element(By.ID, "report_type")
+                report_type.send_keys("11")  # 11 = PTR
+
+                # Set date range
+                start_date_input = driver.find_element(By.ID, "submitted_start_date")
+                start_date_input.clear()
+                start_date_input.send_keys(start_date)
+
+                end_date_input = driver.find_element(By.ID, "submitted_end_date")
+                end_date_input.clear()
+                end_date_input.send_keys(end_date)
+
+                # Submit search
+                search_btn = driver.find_element(By.CSS_SELECTOR, "button.btn-primary")
+                search_btn.click()
+
+                # Wait for results table
+                WebDriverWait(driver, 15).until(
+                    EC.presence_of_element_located((By.ID, "filedReports"))
+                )
+
+                # Give the DataTable time to populate
+                import time
+                time.sleep(2)
+
+                # Parse results table
+                soup = BeautifulSoup(driver.page_source, 'html.parser')
+                table = soup.find('table', {'id': 'filedReports'})
+
+                if table:
+                    tbody = table.find('tbody')
+                    if tbody:
+                        rows = tbody.find_all('tr')
+                        for row in rows:
+                            cells = row.find_all('td')
+                            if len(cells) >= 4:
+                                # Extract link to PTR
+                                link = cells[0].find('a')
+                                ptr_url = None
+                                if link:
+                                    href = link.get('href', '')
+                                    if href.startswith('/'):
+                                        ptr_url = f"{self.BASE_URL}{href}"
+                                    else:
+                                        ptr_url = href
+
+                                results.append({
+                                    'name': cells[0].get_text(strip=True),
+                                    'office': cells[1].get_text(strip=True),
+                                    'report_type': cells[2].get_text(strip=True),
+                                    'date': cells[3].get_text(strip=True),
+                                    'url': ptr_url
+                                })
+
+                print(f"Found {len(results)} Senate PTRs")
+
+            except Exception as e:
+                print(f"Error during Senate search: {e}")
+
         except Exception as e:
-            print(f"Senate PTR search error: {e}")
-            return []
+            print(f"Error accessing Senate EFD site: {e}")
 
-    async def _parse_ptr_page(self, client: httpx.AsyncClient, ptr_id: str) -> list[dict]:
+        return results
+
+    def _parse_ptr_page(self, driver: webdriver.Chrome, url: str, senator_name: str) -> list[dict]:
         """Parse a single PTR page to extract transactions."""
-        url = f"{self.REPORT_URL}{ptr_id}/"
+        transactions = []
 
         try:
-            response = await client.get(
-                url,
-                cookies=self.cookies,
-                timeout=30.0
+            driver.get(url)
+
+            # Wait for page to load
+            WebDriverWait(driver, 10).until(
+                EC.presence_of_element_located((By.TAG_NAME, "body"))
             )
 
-            if response.status_code != 200:
-                return []
+            soup = BeautifulSoup(driver.page_source, 'html.parser')
 
-            soup = BeautifulSoup(response.text, 'html.parser')
-            transactions = []
-
-            # Find the transactions table
+            # Find transaction tables
             tables = soup.find_all('table', class_='table')
 
             for table in tables:
-                rows = table.find_all('tr')
+                # Check if this looks like a transaction table
+                headers = [th.get_text(strip=True).lower() for th in table.find_all('th')]
 
-                for row in rows[1:]:  # Skip header
-                    cells = row.find_all('td')
-                    if len(cells) >= 5:
-                        transaction = self._parse_transaction_row(cells)
-                        if transaction:
-                            transactions.append(transaction)
+                if any('transaction' in h or 'asset' in h or 'ticker' in h for h in headers):
+                    rows = table.find_all('tr')
 
-            return transactions
+                    for row in rows[1:]:  # Skip header
+                        cells = row.find_all('td')
+                        if len(cells) >= 5:
+                            tx = self._parse_transaction_row(cells, senator_name, url)
+                            if tx:
+                                transactions.append(tx)
 
         except Exception as e:
-            print(f"Error parsing PTR {ptr_id}: {e}")
-            return []
+            print(f"Error parsing Senate PTR page: {e}")
 
-    def _parse_transaction_row(self, cells: list) -> Optional[dict]:
+        return transactions
+
+    def _parse_transaction_row(self, cells: list, senator_name: str, filing_url: str) -> Optional[dict]:
         """Parse a single transaction row from the PTR table."""
         try:
             # Expected columns: Transaction Date, Owner, Ticker, Asset Name, Type, Amount
@@ -219,8 +228,13 @@ class SenateDisclosureScraper:
             if not tx_date or not asset_name:
                 return None
 
+            parsed_date = self._parse_date(tx_date)
+
             return {
-                "transaction_date": self._parse_date(tx_date),
+                "representative": senator_name,
+                "chamber": "senate",
+                "transaction_date": parsed_date,
+                "disclosure_date": parsed_date,  # Will be overwritten if filing date known
                 "owner": owner,
                 "ticker": ticker if ticker and ticker != "--" else None,
                 "asset_description": asset_name,
@@ -228,6 +242,7 @@ class SenateDisclosureScraper:
                 "amount_range": amount,
                 "amount_min": self._parse_amount_min(amount),
                 "amount_max": self._parse_amount_max(amount),
+                "filing_url": filing_url,
             }
         except Exception:
             return None
@@ -298,6 +313,54 @@ class SenateDisclosureScraper:
                 return max_val
         return None
 
+    def _sync_get_recent_transactions(self, days: int = 90, limit: int = 100) -> list[dict]:
+        """Synchronous method to get recent Senate transactions."""
+        start_date = (datetime.now() - timedelta(days=days)).strftime("%m/%d/%Y")
+        end_date = datetime.now().strftime("%m/%d/%Y")
+        all_transactions = []
+        driver = None
+
+        try:
+            driver = init_driver()
+
+            # Search for PTRs
+            ptrs = self._accept_agreement_and_search(driver, start_date, end_date)
+
+            # Process each PTR
+            for i, ptr in enumerate(ptrs[:limit]):
+                try:
+                    if ptr.get('url'):
+                        transactions = self._parse_ptr_page(
+                            driver,
+                            ptr['url'],
+                            ptr.get('name', '')
+                        )
+
+                        # Add disclosure date from PTR filing date
+                        filing_date = self._parse_date(ptr.get('date'))
+                        for tx in transactions:
+                            if filing_date:
+                                tx['disclosure_date'] = filing_date
+
+                        all_transactions.extend(transactions)
+
+                        # Rate limiting
+                        import time
+                        time.sleep(1.0)
+
+                except Exception as e:
+                    print(f"Error processing Senate PTR {i}: {e}")
+                    continue
+
+        except Exception as e:
+            print(f"Senate scraper error: {e}")
+        finally:
+            if driver:
+                driver.quit()
+
+        print(f"Retrieved {len(all_transactions)} Senate transactions")
+        return all_transactions
+
     async def get_recent_transactions(self, days: int = 90, limit: int = 100) -> list[dict]:
         """Get recent Senate transactions from official source.
 
@@ -308,157 +371,156 @@ class SenateDisclosureScraper:
         Returns:
             List of transaction dictionaries
         """
-        start_date = (datetime.now() - timedelta(days=days)).strftime("%m/%d/%Y")
-        all_transactions = []
-
-        async with httpx.AsyncClient() as client:
-            # Get CSRF token and accept agreement
-            self.csrf_token = await self._get_csrf_token(client)
-            await self._accept_agreement(client)
-
-            # Search for PTRs
-            ptrs = await self._search_ptrs(client, start_date=start_date, limit=limit)
-            print(f"Found {len(ptrs)} Senate PTRs")
-
-            # Process each PTR
-            for i, ptr in enumerate(ptrs[:limit]):
-                try:
-                    # Extract PTR ID and senator info
-                    # PTR data structure varies, try to extract key fields
-                    ptr_link = None
-                    senator_name = ""
-                    file_date = None
-
-                    if isinstance(ptr, list) and len(ptr) >= 4:
-                        # Format: [name, office, report_type, date, link_html]
-                        senator_name = ptr[0] if ptr[0] else ""
-                        file_date = ptr[3] if len(ptr) > 3 else None
-                        link_html = ptr[4] if len(ptr) > 4 else ""
-
-                        # Extract PTR ID from link
-                        match = re.search(r'/ptr/([a-f0-9-]+)/', str(link_html))
-                        if match:
-                            ptr_link = match.group(1)
-
-                    if not ptr_link:
-                        continue
-
-                    # Get transactions from this PTR
-                    transactions = await self._parse_ptr_page(client, ptr_link)
-
-                    # Add senator info to each transaction
-                    for tx in transactions:
-                        tx["senator"] = senator_name
-                        tx["representative"] = senator_name
-                        tx["chamber"] = "senate"
-                        tx["disclosure_date"] = self._parse_date(file_date) if file_date else tx.get("transaction_date")
-                        tx["filing_url"] = f"{self.REPORT_URL}{ptr_link}/"
-
-                    all_transactions.extend(transactions)
-
-                    # Rate limiting
-                    if i < len(ptrs) - 1:
-                        await asyncio.sleep(1.0)
-
-                except Exception as e:
-                    print(f"Error processing Senate PTR: {e}")
-                    continue
-
-        print(f"Retrieved {len(all_transactions)} Senate transactions")
-        return all_transactions
+        # Run synchronous Selenium code in thread pool
+        return await asyncio.to_thread(
+            self._sync_get_recent_transactions, days, limit
+        )
 
 
 class HouseDisclosureScraper:
     """Scraper for House Financial Disclosure system.
 
     The House disclosure system at disclosures-clerk.house.gov provides
-    financial disclosure reports including PTRs. This scraper:
-    1. Searches the financial disclosure database
-    2. Downloads and parses PTR pages
-    3. Extracts transaction details
+    financial disclosure reports including PTRs. This scraper uses Selenium to:
+    1. Search the financial disclosure database
+    2. Download and parse PTR pages
+    3. Extract transaction details
     """
 
     BASE_URL = "https://disclosures-clerk.house.gov"
-    SEARCH_URL = f"{BASE_URL}/FinancialDisclosure/ViewMemberSearchResult"
+    SEARCH_URL = f"{BASE_URL}/FinancialDisclosure"
 
-    async def _search_members(
+    def _search_and_get_ptrs(
         self,
-        client: httpx.AsyncClient,
-        last_name: str = "",
-        filing_year: int = None,
-        state: str = ""
+        driver: webdriver.Chrome,
+        filing_year: int
     ) -> list[dict]:
-        """Search for member financial disclosures."""
-        if not filing_year:
-            filing_year = datetime.now().year
-
-        params = {
-            "LastName": last_name,
-            "FilingYear": filing_year,
-            "State": state,
-            "District": "",
-        }
+        """Search for House PTRs using Selenium."""
+        results = []
 
         try:
-            response = await client.get(
-                self.SEARCH_URL,
-                params=params,
-                timeout=30.0,
-                follow_redirects=True
+            # Navigate to search page
+            driver.get(self.SEARCH_URL)
+
+            # Wait for page to load
+            WebDriverWait(driver, 10).until(
+                EC.presence_of_element_located((By.TAG_NAME, "body"))
             )
 
-            if response.status_code != 200:
+            # Look for search form and fill it
+            try:
+                # Select filing year
+                year_select = WebDriverWait(driver, 5).until(
+                    EC.presence_of_element_located((By.ID, "FilingYear"))
+                )
+                year_select.send_keys(str(filing_year))
+
+                # Select report type (PTR)
+                # The form might have different element IDs
+                try:
+                    report_type = driver.find_element(By.ID, "ReportType")
+                    report_type.send_keys("P")  # P for Periodic Transaction
+                except NoSuchElementException:
+                    pass
+
+                # Submit search
+                search_btn = driver.find_element(By.CSS_SELECTOR, "input[type='submit'], button[type='submit']")
+                search_btn.click()
+
+                # Wait for results
+                WebDriverWait(driver, 15).until(
+                    EC.presence_of_element_located((By.CLASS_NAME, "library-table"))
+                )
+
+            except TimeoutException:
+                print("Timeout waiting for House search form/results")
                 return []
 
-            soup = BeautifulSoup(response.text, 'html.parser')
-            results = []
-
-            # Parse the results table
+            # Parse results from page
+            soup = BeautifulSoup(driver.page_source, 'html.parser')
             table = soup.find('table', class_='library-table')
-            if not table:
-                return []
 
-            rows = table.find_all('tr')
-            for row in rows[1:]:  # Skip header
-                cells = row.find_all('td')
-                if len(cells) >= 4:
-                    # Extract member info and report link
-                    name_cell = cells[0]
-                    link = name_cell.find('a')
+            if table:
+                rows = table.find_all('tr')
+                for row in rows[1:]:  # Skip header
+                    cells = row.find_all('td')
+                    if len(cells) >= 4:
+                        # Extract member info and report link
+                        name_cell = cells[0]
+                        link = name_cell.find('a')
 
-                    if link:
-                        results.append({
-                            "name": name_cell.get_text(strip=True),
-                            "office": cells[1].get_text(strip=True) if len(cells) > 1 else "",
-                            "filing_year": cells[2].get_text(strip=True) if len(cells) > 2 else "",
-                            "report_type": cells[3].get_text(strip=True) if len(cells) > 3 else "",
-                            "url": self.BASE_URL + link.get('href', ''),
-                        })
+                        if link:
+                            href = link.get('href', '')
+                            full_url = href if href.startswith('http') else f"{self.BASE_URL}{href}"
 
-            return results
+                            results.append({
+                                "name": name_cell.get_text(strip=True),
+                                "office": cells[1].get_text(strip=True) if len(cells) > 1 else "",
+                                "filing_year": cells[2].get_text(strip=True) if len(cells) > 2 else "",
+                                "report_type": cells[3].get_text(strip=True) if len(cells) > 3 else "",
+                                "url": full_url,
+                            })
+
+            # Check for pagination and get more results
+            while True:
+                try:
+                    next_btn = driver.find_element(By.CSS_SELECTOR, "a.next, .pagination .next a")
+                    next_btn.click()
+
+                    WebDriverWait(driver, 10).until(
+                        EC.staleness_of(table) if table else EC.presence_of_element_located((By.CLASS_NAME, "library-table"))
+                    )
+
+                    soup = BeautifulSoup(driver.page_source, 'html.parser')
+                    table = soup.find('table', class_='library-table')
+
+                    if table:
+                        rows = table.find_all('tr')
+                        for row in rows[1:]:
+                            cells = row.find_all('td')
+                            if len(cells) >= 4:
+                                name_cell = cells[0]
+                                link = name_cell.find('a')
+                                if link:
+                                    href = link.get('href', '')
+                                    full_url = href if href.startswith('http') else f"{self.BASE_URL}{href}"
+                                    results.append({
+                                        "name": name_cell.get_text(strip=True),
+                                        "office": cells[1].get_text(strip=True) if len(cells) > 1 else "",
+                                        "filing_year": cells[2].get_text(strip=True) if len(cells) > 2 else "",
+                                        "report_type": cells[3].get_text(strip=True) if len(cells) > 3 else "",
+                                        "url": full_url,
+                                    })
+                except (NoSuchElementException, TimeoutException):
+                    break
+
+            print(f"Found {len(results)} House reports for {filing_year}")
 
         except Exception as e:
-            print(f"House search error: {e}")
-            return []
+            print(f"Error searching House disclosures: {e}")
 
-    async def _parse_ptr_page(self, client: httpx.AsyncClient, url: str, member_name: str) -> list[dict]:
+        return results
+
+    def _parse_ptr_page(self, driver: webdriver.Chrome, url: str, member_name: str) -> list[dict]:
         """Parse a House PTR page to extract transactions."""
+        transactions = []
+
         try:
-            response = await client.get(url, timeout=30.0, follow_redirects=True)
+            driver.get(url)
 
-            if response.status_code != 200:
+            # Wait for page to load
+            WebDriverWait(driver, 10).until(
+                EC.presence_of_element_located((By.TAG_NAME, "body"))
+            )
+
+            # Check if this redirected to a PDF
+            if url.lower().endswith('.pdf') or 'pdf' in driver.current_url.lower():
+                print(f"Skipping PDF: {url}")
                 return []
 
-            # Check if this is a PDF
-            content_type = response.headers.get('content-type', '')
-            if 'pdf' in content_type.lower():
-                # Skip PDFs for now - would need PDF parsing
-                return []
+            soup = BeautifulSoup(driver.page_source, 'html.parser')
 
-            soup = BeautifulSoup(response.text, 'html.parser')
-            transactions = []
-
-            # Find transaction tables (PTR format)
+            # Find transaction tables
             tables = soup.find_all('table')
 
             for table in tables:
@@ -475,11 +537,10 @@ class HouseDisclosureScraper:
                             if tx:
                                 transactions.append(tx)
 
-            return transactions
-
         except Exception as e:
             print(f"Error parsing House PTR: {e}")
-            return []
+
+        return transactions
 
     def _parse_house_transaction(self, cells: list, member_name: str, filing_url: str) -> Optional[dict]:
         """Parse a House transaction row."""
@@ -496,12 +557,13 @@ class HouseDisclosureScraper:
 
             # Extract ticker from asset description
             ticker = self._extract_ticker(asset)
+            parsed_date = self._parse_date(tx_date)
 
             return {
                 "representative": member_name,
                 "chamber": "house",
-                "transaction_date": self._parse_date(tx_date),
-                "disclosure_date": self._parse_date(tx_date),  # Will be updated if available
+                "transaction_date": parsed_date,
+                "disclosure_date": parsed_date,
                 "ticker": ticker,
                 "asset_description": asset,
                 "transaction_type": self._normalize_type(tx_type),
@@ -515,7 +577,6 @@ class HouseDisclosureScraper:
 
     def _extract_ticker(self, asset: str) -> Optional[str]:
         """Extract stock ticker from asset description."""
-        # Common patterns: "AAPL - Apple Inc" or "(AAPL)" or "[AAPL]"
         patterns = [
             r'\(([A-Z]{1,5})\)',
             r'\[([A-Z]{1,5})\]',
@@ -595,29 +656,23 @@ class HouseDisclosureScraper:
                 return max_val
         return None
 
-    async def get_recent_transactions(self, years: list[int] = None, limit: int = 100) -> list[dict]:
-        """Get recent House transactions from official source.
-
-        Args:
-            years: Filing years to search (default: current and previous year)
-            limit: Maximum number of reports to process per year
-
-        Returns:
-            List of transaction dictionaries
-        """
+    def _sync_get_recent_transactions(self, years: list[int] = None, limit: int = 100) -> list[dict]:
+        """Synchronous method to get recent House transactions."""
         if not years:
             current_year = datetime.now().year
             years = [current_year, current_year - 1]
 
         all_transactions = []
+        driver = None
 
-        async with httpx.AsyncClient() as client:
+        try:
+            driver = init_driver()
+
             for year in years:
                 print(f"Searching House disclosures for {year}...")
 
-                # Search for all PTRs in the year
-                # We search without a last name to get all members
-                results = await self._search_members(client, filing_year=year)
+                # Search for PTRs
+                results = self._search_and_get_ptrs(driver, year)
 
                 # Filter for PTRs only
                 ptrs = [r for r in results if 'ptr' in r.get('report_type', '').lower()
@@ -629,23 +684,44 @@ class HouseDisclosureScraper:
                 # Process each PTR
                 for i, ptr in enumerate(ptrs[:limit]):
                     try:
-                        transactions = await self._parse_ptr_page(
-                            client,
+                        transactions = self._parse_ptr_page(
+                            driver,
                             ptr['url'],
                             ptr['name']
                         )
                         all_transactions.extend(transactions)
 
                         # Rate limiting
-                        if i < len(ptrs) - 1:
-                            await asyncio.sleep(0.5)
+                        import time
+                        time.sleep(0.5)
 
                     except Exception as e:
-                        print(f"Error processing House PTR: {e}")
+                        print(f"Error processing House PTR {i}: {e}")
                         continue
+
+        except Exception as e:
+            print(f"House scraper error: {e}")
+        finally:
+            if driver:
+                driver.quit()
 
         print(f"Retrieved {len(all_transactions)} House transactions")
         return all_transactions
+
+    async def get_recent_transactions(self, years: list[int] = None, limit: int = 100) -> list[dict]:
+        """Get recent House transactions from official source.
+
+        Args:
+            years: Filing years to search (default: current and previous year)
+            limit: Maximum number of reports to process per year
+
+        Returns:
+            List of transaction dictionaries
+        """
+        # Run synchronous Selenium code in thread pool
+        return await asyncio.to_thread(
+            self._sync_get_recent_transactions, years, limit
+        )
 
 
 class OfficialDisclosureClient:
