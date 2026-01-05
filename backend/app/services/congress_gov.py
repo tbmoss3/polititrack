@@ -145,47 +145,66 @@ class CongressGovClient:
         data = await self._request(f"bill/{congress}/{bill_type}/{bill_number}/actions")
         return data.get("actions", [])
 
-    async def get_votes(self, congress: int = 119, chamber: str = "house", limit: int = 50, offset: int = 0) -> list[dict]:
+    async def get_house_votes(self, congress: int = 119, session: int = 1, limit: int = 50, offset: int = 0) -> list[dict]:
         """
-        Get recent votes for a chamber.
+        Get House roll call votes for a specific Congress and session.
 
         Args:
-            congress: Congress number
-            chamber: 'house' or 'senate'
+            congress: Congress number (e.g., 118, 119)
+            session: Session number (1 or 2 - each Congress has 2 sessions)
             limit: Number of results
             offset: Pagination offset
 
         Returns:
-            List of votes
+            List of House votes
         """
         try:
             data = await self._request(
-                f"vote/{congress}/{chamber}",
+                f"house-vote/{congress}/{session}",
                 {"limit": limit, "offset": offset}
             )
-            return data.get("votes", [])
+            return data.get("houseRollCallVotes", [])
         except Exception as e:
-            print(f"Error fetching votes: {e}")
+            print(f"Error fetching house votes: {e}")
             return []
 
-    async def get_vote_details(self, congress: int, chamber: str, roll_number: int) -> dict:
+    async def get_house_vote_details(self, congress: int, session: int, roll_number: int) -> dict:
         """
-        Get detailed information about a specific vote including how each member voted.
+        Get detailed information about a specific House vote.
 
         Args:
             congress: Congress number
-            chamber: 'house' or 'senate'
+            session: Session number (1 or 2)
             roll_number: Roll call number
 
         Returns:
             Vote details dictionary
         """
         try:
-            data = await self._request(f"vote/{congress}/{chamber}/{roll_number}")
-            return data.get("vote", {})
+            data = await self._request(f"house-vote/{congress}/{session}/{roll_number}")
+            return data.get("houseRollCallVote", {})
         except Exception as e:
-            print(f"Error fetching vote details: {e}")
+            print(f"Error fetching house vote details: {e}")
             return {}
+
+    async def get_house_vote_members(self, congress: int, session: int, roll_number: int) -> list[dict]:
+        """
+        Get member votes for a specific House roll call vote.
+
+        Args:
+            congress: Congress number
+            session: Session number (1 or 2)
+            roll_number: Roll call number
+
+        Returns:
+            List of member votes
+        """
+        try:
+            data = await self._request(f"house-vote/{congress}/{session}/{roll_number}/members")
+            return data.get("houseRollCallVoteMembers", [])
+        except Exception as e:
+            print(f"Error fetching house vote members: {e}")
+            return []
 
 
 # State name to 2-letter code mapping

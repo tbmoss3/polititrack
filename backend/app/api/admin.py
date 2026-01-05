@@ -179,45 +179,35 @@ async def test_votes(bioguide_id: str):
         return {"status": "error", "error": str(e)}
 
 
-@router.get("/test-chamber-votes/{chamber}")
-async def test_chamber_votes(chamber: str, congress: int = 119, limit: int = 3):
-    """Test fetching votes by chamber to see response structure."""
+@router.get("/test-house-votes")
+async def test_house_votes(congress: int = 119, session: int = 1, limit: int = 3):
+    """Test fetching House roll call votes to see response structure."""
     if not settings.congress_gov_api_key:
         return {"error": "API key not configured"}
 
     client = CongressGovClient()
     try:
-        # Also try the raw request to see what we get
-        import httpx
-        params = {"api_key": settings.congress_gov_api_key, "format": "json", "limit": limit}
-        async with httpx.AsyncClient() as http_client:
-            response = await http_client.get(
-                f"https://api.congress.gov/v3/vote/{congress}/{chamber}",
-                params=params,
-                timeout=30.0,
-            )
-            raw_data = response.json()
+        votes = await client.get_house_votes(congress=congress, session=session, limit=limit)
 
-        votes = await client.get_votes(congress=congress, chamber=chamber, limit=limit)
-
-        # If we got votes, also try to get details for the first one
+        # If we got votes, also try to get member votes for the first one
         vote_detail = None
+        member_votes = []
         if votes:
             first_vote = votes[0]
             roll_number = first_vote.get("rollNumber") or first_vote.get("number")
             if roll_number:
-                vote_detail = await client.get_vote_details(congress, chamber, int(roll_number))
+                vote_detail = await client.get_house_vote_details(congress, session, int(roll_number))
+                member_votes = await client.get_house_vote_members(congress, session, int(roll_number))
 
         return {
             "status": "ok",
             "congress": congress,
-            "chamber": chamber,
-            "raw_keys": list(raw_data.keys()) if isinstance(raw_data, dict) else str(type(raw_data)),
-            "raw_sample": raw_data,
+            "session": session,
             "votes_count": len(votes),
             "votes_sample": votes[:2] if votes else [],
-            "vote_detail_keys": list(vote_detail.keys()) if vote_detail else [],
-            "vote_detail_sample": vote_detail
+            "vote_detail": vote_detail,
+            "member_votes_count": len(member_votes),
+            "member_votes_sample": member_votes[:5] if member_votes else []
         }
     except Exception as e:
         import traceback
@@ -256,13 +246,17 @@ async def get_stats():
 # ============ VOTING RECORDS ============
 
 @router.post("/populate-votes")
-async def populate_votes(vote_limit: int = 20):
+async def populate_votes(vote_limit: int = 20, congress: int = 119, session: int = 1):
     """
-    Populate voting records from Congress.gov API.
-    Fetches recent votes by chamber and records how each member voted.
+    Populate House voting records from Congress.gov API.
+    Fetches recent House roll call votes and records how each member voted.
+
+    Note: Senate vote API is not yet available from Congress.gov.
 
     Args:
-        vote_limit: Number of recent votes to fetch per chamber (default 20)
+        vote_limit: Number of recent votes to fetch (default 20)
+        congress: Congress number (default 119)
+        session: Session number (1 or 2, default 1)
     """
     if not settings.congress_gov_api_key:
         raise HTTPException(status_code=500, detail="Congress.gov API key not configured")
@@ -272,109 +266,98 @@ async def populate_votes(vote_limit: int = 20):
 
     try:
         # Build a mapping of bioguide_id -> politician for quick lookup
-        politicians = db.query(Politician).filter(Politician.in_office == True).all()
+        politicians = db.query(Politician).filter(
+            Politician.in_office == True,
+            Politician.chamber == "house"
+        ).all()
         politician_map = {p.bioguide_id: p for p in politicians}
-        print(f"Loaded {len(politician_map)} politicians for vote matching")
+        print(f"Loaded {len(politician_map)} House members for vote matching")
 
         total_votes_added = 0
         votes_processed = 0
-        congress = 119  # Current Congress
 
-        # Process both chambers
-        for chamber in ["house", "senate"]:
-            print(f"Fetching {chamber} votes...")
-            votes = await client.get_votes(congress=congress, chamber=chamber, limit=vote_limit)
-            print(f"Found {len(votes)} {chamber} votes")
+        print(f"Fetching House votes for Congress {congress}, Session {session}...")
+        votes = await client.get_house_votes(congress=congress, session=session, limit=vote_limit)
+        print(f"Found {len(votes)} House votes")
 
-            for vote_summary in votes:
-                try:
-                    # Extract roll call number from the vote URL or data
-                    vote_url = vote_summary.get("url", "")
-                    roll_number = vote_summary.get("rollNumber") or vote_summary.get("number")
+        for vote_summary in votes:
+            try:
+                roll_number = vote_summary.get("rollNumber") or vote_summary.get("number")
 
-                    if not roll_number:
-                        # Try to extract from URL
-                        if "/roll/" in vote_url:
-                            roll_number = vote_url.split("/roll/")[-1].split("?")[0]
-
-                    if not roll_number:
-                        print(f"Could not find roll number for vote: {vote_summary}")
-                        continue
-
-                    roll_number = int(roll_number)
-                    print(f"Processing {chamber} vote #{roll_number}...")
-
-                    # Get detailed vote info including member votes
-                    vote_details = await client.get_vote_details(congress, chamber, roll_number)
-
-                    if not vote_details:
-                        print(f"No details for {chamber} vote #{roll_number}")
-                        continue
-
-                    # Get member votes from the response
-                    # Congress.gov API returns votes in different formats, try multiple keys
-                    member_votes = vote_details.get("memberVotes", {})
-                    if not member_votes:
-                        member_votes = vote_details.get("votes", {})
-
-                    question = vote_details.get("question") or vote_summary.get("question", "")
-                    result = vote_details.get("result") or vote_summary.get("result", "")
-                    vote_date = vote_details.get("date") or vote_summary.get("date")
-
-                    # Process each vote position (Yes, No, Not Voting, Present)
-                    for position_name, members in member_votes.items():
-                        if not isinstance(members, list):
-                            continue
-
-                        # Normalize position name
-                        position = position_name.lower().replace(" ", "_").replace("-", "_")
-                        if position in ["yea", "aye"]:
-                            position = "yes"
-                        elif position in ["nay"]:
-                            position = "no"
-                        elif position not in ["yes", "no", "not_voting", "present"]:
-                            position = "not_voting"
-
-                        for member in members:
-                            bioguide_id = member.get("bioguideId") or member.get("bioguide_id")
-                            if not bioguide_id:
-                                continue
-
-                            politician = politician_map.get(bioguide_id)
-                            if not politician:
-                                continue
-
-                            # Create unique vote ID
-                            vote_id = f"{bioguide_id}-{roll_number}-{congress}-{chamber}"
-
-                            # Check if already exists
-                            existing = db.query(Vote).filter(Vote.vote_id == vote_id).first()
-                            if existing:
-                                continue
-
-                            vote = Vote(
-                                vote_id=vote_id,
-                                politician_id=politician.id,
-                                vote_position=position,
-                                vote_date=vote_date,
-                                chamber=chamber,
-                                question=question[:500] if question else None,
-                                result=result[:100] if result else None,
-                            )
-                            db.add(vote)
-                            total_votes_added += 1
-
-                    votes_processed += 1
-                    # Delay to respect rate limits
-                    await asyncio.sleep(0.5)
-
-                except Exception as e:
-                    print(f"Error processing vote: {e}")
+                if not roll_number:
+                    print(f"Could not find roll number for vote: {vote_summary}")
                     continue
+
+                roll_number = int(roll_number)
+                print(f"Processing House vote #{roll_number}...")
+
+                # Get member votes for this roll call
+                member_votes = await client.get_house_vote_members(congress, session, roll_number)
+
+                if not member_votes:
+                    print(f"No member votes for House vote #{roll_number}")
+                    continue
+
+                # Get vote details for question/result
+                vote_details = await client.get_house_vote_details(congress, session, roll_number)
+                question = vote_details.get("question") or vote_summary.get("question", "")
+                result = vote_details.get("result") or vote_summary.get("result", "")
+                vote_date = vote_details.get("date") or vote_summary.get("date")
+
+                # Process each member's vote
+                for member_vote in member_votes:
+                    bioguide_id = member_vote.get("bioguideId") or member_vote.get("bioguide_id")
+                    if not bioguide_id:
+                        continue
+
+                    politician = politician_map.get(bioguide_id)
+                    if not politician:
+                        continue
+
+                    # Get vote position
+                    position = member_vote.get("vote", "").lower().replace(" ", "_").replace("-", "_")
+                    if position in ["yea", "aye", "yes"]:
+                        position = "yes"
+                    elif position in ["nay", "no"]:
+                        position = "no"
+                    elif position in ["present"]:
+                        position = "present"
+                    else:
+                        position = "not_voting"
+
+                    # Create unique vote ID
+                    vote_id = f"{bioguide_id}-{roll_number}-{congress}-{session}-house"
+
+                    # Check if already exists
+                    existing = db.query(Vote).filter(Vote.vote_id == vote_id).first()
+                    if existing:
+                        continue
+
+                    vote = Vote(
+                        vote_id=vote_id,
+                        politician_id=politician.id,
+                        vote_position=position,
+                        vote_date=vote_date,
+                        chamber="house",
+                        question=question[:500] if question else None,
+                        result=result[:100] if result else None,
+                    )
+                    db.add(vote)
+                    total_votes_added += 1
+
+                votes_processed += 1
+                # Delay to respect rate limits
+                await asyncio.sleep(0.5)
+
+            except Exception as e:
+                print(f"Error processing vote: {e}")
+                continue
 
         db.commit()
         return {
             "status": "complete",
+            "congress": congress,
+            "session": session,
             "votes_processed": votes_processed,
             "vote_records_added": total_votes_added
         }
