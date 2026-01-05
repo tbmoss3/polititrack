@@ -523,8 +523,10 @@ async def populate_sponsored_bills(limit: int = 50, congress: int = 119):
             Politician.in_office == True
         ).limit(limit).all()
 
-        total_bills = 0
+        total_bills_added = 0
+        total_bills_updated = 0
         politicians_processed = 0
+        errors = []
 
         for politician in politicians:
             try:
@@ -532,6 +534,7 @@ async def populate_sponsored_bills(limit: int = 50, congress: int = 119):
 
                 # Fetch sponsored legislation
                 sponsored = await client.get_member_sponsored_legislation(politician.bioguide_id, limit=50)
+                print(f"  Found {len(sponsored)} sponsored items")
 
                 for legislation in sponsored:
                     bill_type = legislation.get("type", "").lower()
@@ -555,6 +558,7 @@ async def populate_sponsored_bills(limit: int = 50, congress: int = 119):
                         if not existing.sponsor_id:
                             existing.sponsor_id = politician.id
                             existing.updated_at = datetime.utcnow()
+                            total_bills_updated += 1
                     else:
                         # Create new bill
                         bill = Bill(
@@ -567,22 +571,27 @@ async def populate_sponsored_bills(limit: int = 50, congress: int = 119):
                             latest_action_date=legislation.get("latestAction", {}).get("actionDate"),
                         )
                         db.add(bill)
-                        total_bills += 1
+                        total_bills_added += 1
 
                 politicians_processed += 1
                 db.commit()
 
                 # Rate limit
-                await asyncio.sleep(0.5)
+                await asyncio.sleep(0.3)
 
             except Exception as e:
-                print(f"Error processing {politician.bioguide_id}: {e}")
+                error_msg = f"Error processing {politician.bioguide_id}: {str(e)}"
+                print(error_msg)
+                errors.append(error_msg)
+                db.rollback()
                 continue
 
         return {
             "status": "complete",
             "politicians_processed": politicians_processed,
-            "bills_added": total_bills,
+            "bills_added": total_bills_added,
+            "bills_updated": total_bills_updated,
+            "errors": errors[:10] if errors else [],
         }
 
     except Exception as e:
