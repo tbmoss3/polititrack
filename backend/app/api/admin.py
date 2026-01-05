@@ -561,10 +561,15 @@ async def populate_finance(limit: int = 50, cycle: int = 2024):
 
 @router.get("/test-official-disclosures")
 async def test_official_disclosures():
-    """Test official government disclosure scrapers."""
+    """Test official government disclosure scrapers.
+
+    Note: Official scrapers require browser automation (Selenium/Playwright) due to
+    JavaScript-heavy sites. Results may be limited without a full browser environment.
+    """
+    import traceback
     results = {
-        "senate": {"status": "unknown", "count": 0, "sample": [], "error": None},
-        "house": {"status": "unknown", "count": 0, "sample": [], "error": None},
+        "senate": {"status": "unknown", "count": 0, "sample": [], "error": None, "note": None},
+        "house": {"status": "unknown", "count": 0, "sample": [], "error": None, "note": None},
     }
 
     # Test Senate scraper
@@ -572,36 +577,53 @@ async def test_official_disclosures():
         from app.services.official_disclosures import SenateDisclosureScraper
         scraper = SenateDisclosureScraper()
         trades = await scraper.get_recent_transactions(days=90, limit=5)
-        results["senate"]["status"] = "ok"
+        results["senate"]["status"] = "ok" if trades else "empty"
         results["senate"]["count"] = len(trades)
         results["senate"]["sample"] = trades[:3]
+        if not trades:
+            results["senate"]["note"] = "Senate EFD requires JavaScript/browser. May need Selenium."
     except Exception as e:
         results["senate"]["status"] = "error"
         results["senate"]["error"] = str(e)
+        results["senate"]["traceback"] = traceback.format_exc()
 
     # Test House scraper
     try:
         from app.services.official_disclosures import HouseDisclosureScraper
         scraper = HouseDisclosureScraper()
         trades = await scraper.get_recent_transactions(limit=5)
-        results["house"]["status"] = "ok"
+        results["house"]["status"] = "ok" if trades else "empty"
         results["house"]["count"] = len(trades)
         results["house"]["sample"] = trades[:3]
+        if not trades:
+            results["house"]["note"] = "House disclosure search may require different parameters."
     except Exception as e:
         results["house"]["status"] = "error"
         results["house"]["error"] = str(e)
+        results["house"]["traceback"] = traceback.format_exc()
+
+    # Add info about data sources
+    results["info"] = {
+        "senate_source": "efdsearch.senate.gov (requires agreement acceptance)",
+        "house_source": "disclosures-clerk.house.gov",
+        "fallback": "GitHub historical data (2020-2021) via Stock Watcher client",
+        "recommendation": "Use populate-stocks with use_official=false for reliable data"
+    }
 
     return results
 
 
 @router.post("/populate-stocks")
-async def populate_stocks(use_official: bool = True):
+async def populate_stocks(use_official: bool = False):
     """
-    Populate stock trade data from official government sources or third-party APIs.
+    Populate stock trade data from various sources.
 
     Args:
-        use_official: If True (default), try official sources first (slower but authoritative).
-                     If False, use third-party APIs only (faster but may be unavailable).
+        use_official: If True, try official gov sources (requires browser automation).
+                     If False (default), use third-party APIs and GitHub fallback.
+
+    Note: Official sources (efdsearch.senate.gov, disclosures-clerk.house.gov) require
+    JavaScript/browser automation. Set use_official=True only if Selenium is configured.
     """
     client = StockWatcherClient(use_official=use_official)
     db = SessionLocal()

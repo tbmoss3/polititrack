@@ -120,6 +120,7 @@ class SenateDisclosureScraper:
             'X-Requested-With': 'XMLHttpRequest',
         }
 
+        # The Senate EFD uses specific form field names
         data = {
             'csrfmiddlewaretoken': self.csrf_token,
             'first_name': first_name,
@@ -131,6 +132,15 @@ class SenateDisclosureScraper:
         }
 
         try:
+            # Try the search home page first to get proper session
+            home_response = await client.get(
+                f"{self.SEARCH_URL}home/",
+                cookies=self.cookies,
+                timeout=30.0,
+                follow_redirects=True
+            )
+            self.cookies.update(dict(home_response.cookies))
+
             response = await client.post(
                 f"{self.SEARCH_URL}report/data/",
                 data=data,
@@ -139,11 +149,21 @@ class SenateDisclosureScraper:
                 timeout=30.0
             )
 
+            print(f"Senate search response status: {response.status_code}")
+            print(f"Senate search response headers: {dict(response.headers)[:200] if response.headers else 'none'}")
+
             if response.status_code == 200:
-                result = response.json()
-                return result.get('data', [])
+                try:
+                    result = response.json()
+                    print(f"Senate search result keys: {result.keys() if isinstance(result, dict) else 'not a dict'}")
+                    return result.get('data', [])
+                except Exception as e:
+                    print(f"Senate JSON parse error: {e}")
+                    print(f"Response text: {response.text[:500]}")
+                    return []
             else:
                 print(f"Senate PTR search failed: {response.status_code}")
+                print(f"Response: {response.text[:500]}")
                 return []
         except Exception as e:
             print(f"Senate PTR search error: {e}")
