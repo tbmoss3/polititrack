@@ -80,60 +80,73 @@ class SenateDisclosureScraper:
 
         try:
             # Navigate to search page
+            print(f"Senate: Navigating to {self.SEARCH_URL}")
             driver.get(self.SEARCH_URL)
+            print(f"Senate: Current URL after navigation: {driver.current_url}")
 
             # Wait for page to load
             WebDriverWait(driver, 10).until(
                 EC.presence_of_element_located((By.TAG_NAME, "body"))
             )
+            print(f"Senate: Page loaded, title: {driver.title}")
 
             # Check for and accept the agreement checkbox
             try:
                 agreement_checkbox = WebDriverWait(driver, 5).until(
                     EC.presence_of_element_located((By.ID, "agree_statement"))
                 )
+                print("Senate: Found agreement checkbox")
                 if not agreement_checkbox.is_selected():
                     agreement_checkbox.click()
+                    print("Senate: Clicked agreement checkbox")
 
                 # Click submit button for agreement
                 submit_btn = driver.find_element(By.CSS_SELECTOR, "button[type='submit']")
                 submit_btn.click()
+                print("Senate: Clicked submit button")
 
                 # Wait for search page to load after agreement
                 WebDriverWait(driver, 10).until(
                     EC.presence_of_element_located((By.ID, "filer_type"))
                 )
+                print("Senate: Search form loaded after agreement")
             except TimeoutException:
                 # Agreement may already be accepted or not present
-                print("Agreement already accepted or not found, continuing...")
+                print("Senate: Agreement already accepted or not found, continuing...")
 
             # Fill in search form
             try:
                 # Select filer type (Senator)
                 filer_type = driver.find_element(By.ID, "filer_type")
                 filer_type.send_keys("1")  # 1 = Senator
+                print("Senate: Set filer_type to Senator")
 
                 # Select report type (Periodic Transaction Report)
                 report_type = driver.find_element(By.ID, "report_type")
                 report_type.send_keys("11")  # 11 = PTR
+                print("Senate: Set report_type to PTR")
 
                 # Set date range
                 start_date_input = driver.find_element(By.ID, "submitted_start_date")
                 start_date_input.clear()
                 start_date_input.send_keys(start_date)
+                print(f"Senate: Set start_date to {start_date}")
 
                 end_date_input = driver.find_element(By.ID, "submitted_end_date")
                 end_date_input.clear()
                 end_date_input.send_keys(end_date)
+                print(f"Senate: Set end_date to {end_date}")
 
                 # Submit search
                 search_btn = driver.find_element(By.CSS_SELECTOR, "button.btn-primary")
                 search_btn.click()
+                print("Senate: Clicked search button")
 
                 # Wait for results table
                 WebDriverWait(driver, 15).until(
                     EC.presence_of_element_located((By.ID, "filedReports"))
                 )
+                print("Senate: Results table found")
 
                 # Give the DataTable time to populate
                 import time
@@ -142,11 +155,14 @@ class SenateDisclosureScraper:
                 # Parse results table
                 soup = BeautifulSoup(driver.page_source, 'html.parser')
                 table = soup.find('table', {'id': 'filedReports'})
+                print(f"Senate: Table found: {table is not None}")
 
                 if table:
                     tbody = table.find('tbody')
+                    print(f"Senate: Tbody found: {tbody is not None}")
                     if tbody:
                         rows = tbody.find_all('tr')
+                        print(f"Senate: Found {len(rows)} rows in tbody")
                         for row in rows:
                             cells = row.find_all('td')
                             if len(cells) >= 4:
@@ -167,11 +183,22 @@ class SenateDisclosureScraper:
                                     'date': cells[3].get_text(strip=True),
                                     'url': ptr_url
                                 })
+                    else:
+                        # Try looking for rows in the table directly
+                        all_rows = table.find_all('tr')
+                        print(f"Senate: Total rows in table: {len(all_rows)}")
+                        # Check page source snippet for debugging
+                        page_src = driver.page_source
+                        if "No matching records" in page_src:
+                            print("Senate: 'No matching records' found in page")
+                        print(f"Senate: Page source length: {len(page_src)}")
 
-                print(f"Found {len(results)} Senate PTRs")
+                print(f"Senate: Found {len(results)} PTRs")
 
             except Exception as e:
-                print(f"Error during Senate search: {e}")
+                import traceback
+                print(f"Senate: Error during search: {e}")
+                print(f"Senate: Traceback: {traceback.format_exc()}")
 
         except Exception as e:
             print(f"Error accessing Senate EFD site: {e}")
