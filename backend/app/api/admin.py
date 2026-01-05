@@ -244,6 +244,77 @@ async def test_house_votes(congress: int = 119, session: int = 1, limit: int = 3
         return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
 
 
+@router.get("/test-stock-watcher")
+async def test_stock_watcher():
+    """Test Stock Watcher APIs to see what they return."""
+    import httpx
+
+    results = {
+        "house": {"status": "unknown", "count": 0, "sample": [], "error": None, "raw": None},
+        "senate": {"status": "unknown", "count": 0, "sample": [], "error": None, "raw": None},
+    }
+
+    # Test House Stock Watcher
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                "https://housestockwatcher.com/api/all-transactions",
+                timeout=30.0,
+                follow_redirects=True
+            )
+            results["house"]["status_code"] = response.status_code
+            results["house"]["headers"] = dict(response.headers)
+
+            if response.status_code == 200:
+                try:
+                    data = response.json()
+                    results["house"]["status"] = "ok"
+                    results["house"]["count"] = len(data) if isinstance(data, list) else 0
+                    results["house"]["sample"] = data[:3] if isinstance(data, list) else data
+                    results["house"]["type"] = str(type(data))
+                except Exception as e:
+                    results["house"]["status"] = "json_error"
+                    results["house"]["error"] = str(e)
+                    results["house"]["raw"] = response.text[:500]
+            else:
+                results["house"]["status"] = "http_error"
+                results["house"]["raw"] = response.text[:500]
+    except Exception as e:
+        results["house"]["status"] = "exception"
+        results["house"]["error"] = str(e)
+
+    # Test Senate Stock Watcher
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                "https://senatestockwatcher.com/api/all-transactions",
+                timeout=30.0,
+                follow_redirects=True
+            )
+            results["senate"]["status_code"] = response.status_code
+            results["senate"]["headers"] = dict(response.headers)
+
+            if response.status_code == 200:
+                try:
+                    data = response.json()
+                    results["senate"]["status"] = "ok"
+                    results["senate"]["count"] = len(data) if isinstance(data, list) else 0
+                    results["senate"]["sample"] = data[:3] if isinstance(data, list) else data
+                    results["senate"]["type"] = str(type(data))
+                except Exception as e:
+                    results["senate"]["status"] = "json_error"
+                    results["senate"]["error"] = str(e)
+                    results["senate"]["raw"] = response.text[:500]
+            else:
+                results["senate"]["status"] = "http_error"
+                results["senate"]["raw"] = response.text[:500]
+    except Exception as e:
+        results["senate"]["status"] = "exception"
+        results["senate"]["error"] = str(e)
+
+    return results
+
+
 @router.get("/stats")
 async def get_stats():
     """Get database statistics."""
