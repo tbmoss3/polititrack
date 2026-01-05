@@ -1,15 +1,16 @@
 """Stock Watcher client for House and Senate stock trades.
 
-This module provides multiple data sources for congressional stock trades:
-1. Official government sources (primary - most authoritative)
-2. Stock Watcher APIs (secondary - if available)
-3. GitHub historical data (fallback - for when APIs are down)
+This module fetches congressional stock trade data from:
+1. Stock Watcher APIs (primary - when available)
+2. GitHub historical data (fallback - reliable historical data)
+
+For official government disclosures, users should visit the official sites directly:
+- Senate: https://efdsearch.senate.gov/search/home/
+- House: https://disclosures-clerk.house.gov/FinancialDisclosure
 """
 
 import httpx
-from bs4 import BeautifulSoup
 from datetime import datetime
-from tenacity import retry, stop_after_attempt, wait_exponential
 
 # Third-party APIs (may be down)
 HOUSE_STOCK_WATCHER_URL = "https://housestockwatcher.com/api/all-transactions"
@@ -22,19 +23,14 @@ SENATE_GITHUB_FALLBACK_URL = "https://raw.githubusercontent.com/timothycarambat/
 class StockWatcherClient:
     """Client for fetching House and Senate stock trade data.
 
-    Data source priority:
-    1. Official government disclosures (if use_official=True)
-    2. Stock Watcher APIs
-    3. GitHub historical data (fallback)
+    Data sources:
+    1. Stock Watcher APIs (housestockwatcher.com, senatestockwatcher.com)
+    2. GitHub historical data (fallback)
     """
 
-    def __init__(self, use_official: bool = True):
-        """Initialize the client.
-
-        Args:
-            use_official: If True, try official sources first (slower but authoritative)
-        """
-        self.use_official = use_official
+    def __init__(self):
+        """Initialize the client."""
+        pass
 
     async def _fetch_json(self, url: str, timeout: float = 60.0) -> list[dict]:
         """Fetch JSON data from a URL."""
@@ -43,45 +39,16 @@ class StockWatcherClient:
             response.raise_for_status()
             return response.json()
 
-    async def get_official_trades(self) -> list[dict]:
-        """
-        Get trades from official government sources.
-
-        Returns:
-            List of trade dictionaries from official sources
-        """
-        try:
-            from app.services.official_disclosures import OfficialDisclosureClient
-            client = OfficialDisclosureClient()
-            trades = await client.get_all_transactions(days=365, limit_per_source=100)
-            print(f"Official sources returned {len(trades)} trades")
-            return trades
-        except Exception as e:
-            print(f"Official disclosure scraper failed: {e}")
-            return []
-
     async def get_house_trades(self) -> list[dict]:
         """
-        Get all House stock trades.
+        Get all House stock trades from Stock Watcher API.
 
         Returns:
             List of trade dictionaries
         """
-        # Try official source first if enabled
-        if self.use_official:
-            try:
-                from app.services.official_disclosures import HouseDisclosureScraper
-                scraper = HouseDisclosureScraper()
-                trades = await scraper.get_recent_transactions(limit=100)
-                if trades:
-                    print(f"Official House source returned {len(trades)} trades")
-                    return trades
-            except Exception as e:
-                print(f"Official House scraper failed: {e}")
-
-        # Try Stock Watcher API
         try:
             data = await self._fetch_json(HOUSE_STOCK_WATCHER_URL)
+            print(f"House Stock Watcher API returned {len(data)} trades")
             return [transform_house_trade(t) for t in data if isinstance(t, dict)]
         except Exception as e:
             print(f"House Stock Watcher API failed: {e}")
@@ -92,28 +59,16 @@ class StockWatcherClient:
         Get all Senate stock trades.
 
         Data source priority:
-        1. Official Senate EFD (efdsearch.senate.gov)
-        2. Senate Stock Watcher API
-        3. GitHub historical data
+        1. Senate Stock Watcher API
+        2. GitHub historical data (fallback)
 
         Returns:
             List of trade dictionaries
         """
-        # Try official source first if enabled
-        if self.use_official:
-            try:
-                from app.services.official_disclosures import SenateDisclosureScraper
-                scraper = SenateDisclosureScraper()
-                trades = await scraper.get_recent_transactions(days=365, limit=100)
-                if trades:
-                    print(f"Official Senate source returned {len(trades)} trades")
-                    return trades
-            except Exception as e:
-                print(f"Official Senate scraper failed: {e}")
-
-        # Try Stock Watcher API
+        # Try Stock Watcher API first
         try:
             data = await self._fetch_json(SENATE_STOCK_WATCHER_URL)
+            print(f"Senate Stock Watcher API returned {len(data)} trades")
             return [transform_senate_trade(t) for t in data if isinstance(t, dict)]
         except Exception as e:
             print(f"Senate Stock Watcher API failed: {e}")
@@ -128,27 +83,16 @@ class StockWatcherClient:
             print(f"GitHub fallback also failed: {e}")
             return []
 
-    async def get_all_trades(self, use_official: bool = None) -> list[dict]:
+    async def get_all_trades(self) -> list[dict]:
         """
         Get all stock trades from both House and Senate.
-
-        Args:
-            use_official: Override instance setting for this call
 
         Returns:
             Combined list of trade dictionaries
         """
-        # Override instance setting if specified
-        original_setting = self.use_official
-        if use_official is not None:
-            self.use_official = use_official
-
-        try:
-            house_trades = await self.get_house_trades()
-            senate_trades = await self.get_senate_trades()
-            return house_trades + senate_trades
-        finally:
-            self.use_official = original_setting
+        house_trades = await self.get_house_trades()
+        senate_trades = await self.get_senate_trades()
+        return house_trades + senate_trades
 
 
 def transform_github_senate_trade(trade: dict) -> dict:

@@ -12,7 +12,9 @@ from app.schemas.politician import (
     PoliticianListResponse,
     PoliticianDetailResponse,
     TransparencyBreakdown,
+    OfficialDisclosureLinks,
 )
+from app.services.official_disclosures import get_disclosure_links
 
 router = APIRouter()
 
@@ -113,6 +115,14 @@ async def get_politician(
 
 def _to_politician_response(politician: Politician) -> PoliticianResponse:
     """Convert Politician model to response schema."""
+    # Get official disclosure links based on chamber
+    disclosure_links = get_disclosure_links(
+        chamber=politician.chamber,
+        last_name=politician.last_name,
+        first_name=politician.first_name,
+        state=politician.state,
+    )
+
     return PoliticianResponse(
         id=politician.id,
         bioguide_id=politician.bioguide_id,
@@ -131,6 +141,7 @@ def _to_politician_response(politician: Politician) -> PoliticianResponse:
         updated_at=politician.updated_at,
         full_name=politician.full_name,
         title=politician.title,
+        official_disclosures=OfficialDisclosureLinks(**disclosure_links),
     )
 
 

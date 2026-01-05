@@ -559,146 +559,48 @@ async def populate_finance(limit: int = 50, cycle: int = 2024):
 
 # ============ STOCK TRADES ============
 
-@router.get("/test-official-disclosures")
-async def test_official_disclosures(capture_page: bool = False):
-    """Test official government disclosure scrapers.
+@router.get("/official-disclosure-links")
+async def get_official_disclosure_links():
+    """Get links to official government disclosure sites.
 
-    Note: Official scrapers require browser automation (Selenium/Playwright) due to
-    JavaScript-heavy sites. Results may be limited without a full browser environment.
-
-    Args:
-        capture_page: If True, capture the page source for debugging
+    Instead of scraping, users can visit these official sources directly
+    to view authoritative financial disclosure documents.
     """
-    import traceback
-    import os
-    results = {
-        "senate": {"status": "unknown", "count": 0, "sample": [], "error": None, "note": None},
-        "house": {"status": "unknown", "count": 0, "sample": [], "error": None, "note": None},
+    from app.services.official_disclosures import (
+        SENATE_EFD_HOME_URL,
+        HOUSE_DISCLOSURE_SEARCH_URL,
+        ADDITIONAL_RESOURCES,
+    )
+
+    return {
+        "senate": {
+            "name": "Senate Electronic Financial Disclosure (EFD)",
+            "url": SENATE_EFD_HOME_URL,
+            "description": "Search for Senators' Periodic Transaction Reports (PTRs) and Annual Financial Disclosures",
+        },
+        "house": {
+            "name": "House Office of the Clerk - Financial Disclosure",
+            "url": HOUSE_DISCLOSURE_SEARCH_URL,
+            "description": "Search for Representatives' financial disclosure reports",
+        },
+        "additional_resources": ADDITIONAL_RESOURCES,
+        "note": "Visit these official sites to view authoritative disclosure documents. The sites require accepting usage agreements.",
     }
-
-    # Check Selenium environment
-    results["selenium_env"] = {
-        "CHROMEDRIVER_PATH": os.environ.get("CHROMEDRIVER_PATH", "not set"),
-        "GOOGLE_CHROME_BIN": os.environ.get("GOOGLE_CHROME_BIN", "not set"),
-        "chromedriver_exists": os.path.exists(os.environ.get("CHROMEDRIVER_PATH", "/usr/bin/chromedriver")),
-        "chrome_exists": os.path.exists(os.environ.get("GOOGLE_CHROME_BIN", "/usr/bin/chromium")),
-    }
-
-    # Test Selenium driver initialization and optionally capture Senate page
-    try:
-        from app.services.official_disclosures import init_driver
-        driver = init_driver()
-        results["selenium_env"]["driver_init"] = "success"
-        driver.get("https://www.google.com")
-        results["selenium_env"]["test_navigation"] = "success"
-        results["selenium_env"]["current_url"] = driver.current_url
-
-        # Capture Senate EFD page for debugging
-        if capture_page:
-            try:
-                from selenium.webdriver.common.by import By
-                driver.get("https://efdsearch.senate.gov/search/")
-                import time
-                time.sleep(3)  # Wait for page to load
-
-                # Look for form elements on the page
-                form_elements = []
-                try:
-                    inputs = driver.find_elements(By.TAG_NAME, "input")
-                    for inp in inputs:
-                        form_elements.append({
-                            "tag": "input",
-                            "id": inp.get_attribute("id"),
-                            "name": inp.get_attribute("name"),
-                            "type": inp.get_attribute("type"),
-                        })
-                    buttons = driver.find_elements(By.TAG_NAME, "button")
-                    for btn in buttons:
-                        form_elements.append({
-                            "tag": "button",
-                            "id": btn.get_attribute("id"),
-                            "text": btn.text[:50] if btn.text else None,
-                            "type": btn.get_attribute("type"),
-                        })
-                    checkboxes = driver.find_elements(By.CSS_SELECTOR, "input[type='checkbox']")
-                    for cb in checkboxes:
-                        form_elements.append({
-                            "tag": "checkbox",
-                            "id": cb.get_attribute("id"),
-                            "name": cb.get_attribute("name"),
-                        })
-                except Exception as fe:
-                    form_elements = [{"error": str(fe)}]
-
-                results["senate_page"] = {
-                    "url": driver.current_url,
-                    "title": driver.title,
-                    "source_length": len(driver.page_source),
-                    "form_elements": form_elements,
-                    "source_snippet": driver.page_source[:5000],  # First 5000 chars
-                }
-            except Exception as e:
-                results["senate_page"] = {"error": str(e)}
-
-        driver.quit()
-    except Exception as e:
-        results["selenium_env"]["driver_init"] = f"failed: {str(e)}"
-        results["selenium_env"]["driver_traceback"] = traceback.format_exc()
-
-    # Test Senate scraper
-    try:
-        from app.services.official_disclosures import SenateDisclosureScraper
-        scraper = SenateDisclosureScraper()
-        trades = await scraper.get_recent_transactions(days=90, limit=5)
-        results["senate"]["status"] = "ok" if trades else "empty"
-        results["senate"]["count"] = len(trades)
-        results["senate"]["sample"] = trades[:3]
-        if not trades:
-            results["senate"]["note"] = "Senate EFD requires JavaScript/browser. May need Selenium."
-    except Exception as e:
-        results["senate"]["status"] = "error"
-        results["senate"]["error"] = str(e)
-        results["senate"]["traceback"] = traceback.format_exc()
-
-    # Test House scraper
-    try:
-        from app.services.official_disclosures import HouseDisclosureScraper
-        scraper = HouseDisclosureScraper()
-        trades = await scraper.get_recent_transactions(limit=5)
-        results["house"]["status"] = "ok" if trades else "empty"
-        results["house"]["count"] = len(trades)
-        results["house"]["sample"] = trades[:3]
-        if not trades:
-            results["house"]["note"] = "House disclosure search may require different parameters."
-    except Exception as e:
-        results["house"]["status"] = "error"
-        results["house"]["error"] = str(e)
-        results["house"]["traceback"] = traceback.format_exc()
-
-    # Add info about data sources
-    results["info"] = {
-        "senate_source": "efdsearch.senate.gov (requires agreement acceptance)",
-        "house_source": "disclosures-clerk.house.gov",
-        "fallback": "GitHub historical data (2020-2021) via Stock Watcher client",
-        "recommendation": "Use populate-stocks with use_official=false for reliable data"
-    }
-
-    return results
 
 
 @router.post("/populate-stocks")
-async def populate_stocks(use_official: bool = False):
+async def populate_stocks():
     """
-    Populate stock trade data from various sources.
+    Populate stock trade data from third-party sources and GitHub fallback.
 
-    Args:
-        use_official: If True, try official gov sources (requires browser automation).
-                     If False (default), use third-party APIs and GitHub fallback.
+    Data sources:
+    - House/Senate Stock Watcher APIs (when available)
+    - GitHub historical data (fallback)
 
-    Note: Official sources (efdsearch.senate.gov, disclosures-clerk.house.gov) require
-    JavaScript/browser automation. Set use_official=True only if Selenium is configured.
+    For official government disclosures, use the /official-disclosure-links endpoint
+    to get links to the authoritative sources.
     """
-    client = StockWatcherClient(use_official=use_official)
+    client = StockWatcherClient()
     db = SessionLocal()
 
     try:

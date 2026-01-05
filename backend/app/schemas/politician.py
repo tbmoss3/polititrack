@@ -40,6 +40,13 @@ class PoliticianUpdate(BaseModel):
     transparency_score: Decimal | None = None
 
 
+class OfficialDisclosureLinks(BaseModel):
+    """Links to official government disclosure sources."""
+
+    financial_disclosure_url: str = Field(..., description="Link to official financial disclosure search")
+    financial_disclosure_source: str = Field(..., description="Name of the disclosure source")
+
+
 class PoliticianResponse(PoliticianBase):
     """Schema for politician response."""
 
@@ -51,6 +58,9 @@ class PoliticianResponse(PoliticianBase):
     # Computed properties
     full_name: str
     title: str
+
+    # Official disclosure links
+    official_disclosures: OfficialDisclosureLinks | None = None
 
     class Config:
         from_attributes = True
