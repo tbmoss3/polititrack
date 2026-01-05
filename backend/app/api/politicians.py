@@ -6,7 +6,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import Politician, Vote, Bill
+from app.models import Politician, Vote, Bill, CampaignFinance, StockTrade
 from app.schemas.politician import (
     PoliticianResponse,
     PoliticianListResponse,
@@ -109,7 +109,7 @@ async def get_politician(
         total_votes=vote_count,
         total_bills_sponsored=bills_sponsored,
         vote_participation_rate=participation_rate,
-        transparency_breakdown=_calculate_transparency_breakdown(politician),
+        transparency_breakdown=_calculate_transparency_breakdown(politician, db),
     )
 
 
@@ -145,17 +145,76 @@ def _to_politician_response(politician: Politician) -> PoliticianResponse:
     )
 
 
-def _calculate_transparency_breakdown(politician: Politician) -> TransparencyBreakdown | None:
-    """Calculate transparency score breakdown for a politician."""
-    # Placeholder implementation - will be replaced with actual calculation
+def _calculate_transparency_breakdown(politician: Politician, db: Session) -> TransparencyBreakdown | None:
+    """Calculate transparency score breakdown for a politician based on actual data."""
+    from datetime import datetime
+
     if politician.transparency_score is None:
         return None
 
-    score = float(politician.transparency_score)
+    # 1. Stock trade disclosure speed (30 pts max)
+    stock_trades = db.execute(
+        select(StockTrade).where(StockTrade.politician_id == politician.id)
+    ).scalars().all()
+
+    stock_score = 15.0  # Default if no trades
+    if stock_trades:
+        delays = []
+        for trade in stock_trades:
+            if trade.transaction_date and trade.disclosure_date:
+                try:
+                    trans_date = datetime.fromisoformat(str(trade.transaction_date))
+                    disc_date = datetime.fromisoformat(str(trade.disclosure_date))
+                    delays.append((disc_date - trans_date).days)
+                except:
+                    pass
+        if delays:
+            avg_delay = sum(delays) / len(delays)
+            if avg_delay <= 30:
+                stock_score = 30.0
+            elif avg_delay <= 45:
+                stock_score = 20.0
+            elif avg_delay <= 60:
+                stock_score = 10.0
+            else:
+                stock_score = 5.0
+
+    # 2. Voting participation (30 pts max)
+    vote_count = db.execute(
+        select(func.count()).where(Vote.politician_id == politician.id)
+    ).scalar() or 0
+
+    yes_no_count = db.execute(
+        select(func.count())
+        .where(Vote.politician_id == politician.id)
+        .where(Vote.vote_position.in_(["yes", "no"]))
+    ).scalar() or 0
+
+    vote_score = 15.0  # Default if no data
+    if vote_count > 0:
+        participation_rate = yes_no_count / vote_count
+        vote_score = participation_rate * 30.0
+
+    # 3. Campaign finance reporting (20 pts max)
+    has_finance = db.execute(
+        select(func.count()).where(CampaignFinance.politician_id == politician.id)
+    ).scalar() or 0
+
+    finance_score = 20.0 if has_finance > 0 else 10.0
+
+    # 4. General disclosure compliance (20 pts max)
+    disclosure_score = 5.0  # Base points
+    if politician.website_url:
+        disclosure_score += 5.0
+    if stock_trades or has_finance:
+        disclosure_score += 10.0
+
+    total = stock_score + vote_score + finance_score + disclosure_score
+
     return TransparencyBreakdown(
-        financial_disclosure=min(30.0, score * 0.3),
-        stock_disclosure=min(30.0, score * 0.3),
-        vote_participation=min(20.0, score * 0.2),
-        campaign_finance=min(20.0, score * 0.2),
-        total_score=score,
+        stock_disclosure=round(stock_score, 2),
+        vote_participation=round(vote_score, 2),
+        campaign_finance=round(finance_score, 2),
+        financial_disclosure=round(disclosure_score, 2),
+        total_score=round(total, 2),
     )
