@@ -100,19 +100,50 @@ class SenateDisclosureScraper:
                     agreement_checkbox.click()
                     print("Senate: Clicked agreement checkbox")
 
-                # Click submit button for agreement
-                submit_btn = driver.find_element(By.CSS_SELECTOR, "button[type='submit']")
-                submit_btn.click()
-                print("Senate: Clicked submit button")
+                # Click the button to submit agreement (it's type="button" not submit)
+                # Find the button - it's the only button on the page
+                buttons = driver.find_elements(By.TAG_NAME, "button")
+                print(f"Senate: Found {len(buttons)} buttons")
+                clicked = False
+                for btn in buttons:
+                    btn_type = btn.get_attribute("type")
+                    btn_class = btn.get_attribute("class")
+                    btn_text = btn.text
+                    print(f"Senate: Button type={btn_type}, class={btn_class}, text={btn_text}")
+                    if btn_type == "button":
+                        # Try regular click first
+                        try:
+                            btn.click()
+                            print("Senate: Clicked agreement button (regular click)")
+                            clicked = True
+                        except Exception as click_err:
+                            print(f"Senate: Regular click failed: {click_err}")
+                            # Try JavaScript click as fallback
+                            driver.execute_script("arguments[0].click();", btn)
+                            print("Senate: Clicked agreement button (JS click)")
+                            clicked = True
+                        break
+                if not clicked:
+                    print("Senate: Warning - no button was clicked")
 
                 # Wait for search page to load after agreement
+                import time
+                time.sleep(2)  # Give page time to transition
                 WebDriverWait(driver, 10).until(
                     EC.presence_of_element_located((By.ID, "filer_type"))
                 )
                 print("Senate: Search form loaded after agreement")
-            except TimeoutException:
+                print(f"Senate: Current URL after agreement: {driver.current_url}")
+            except TimeoutException as te:
                 # Agreement may already be accepted or not present
-                print("Senate: Agreement already accepted or not found, continuing...")
+                print(f"Senate: Agreement timeout: {te}")
+                print(f"Senate: Current URL: {driver.current_url}")
+                # Check if we're already on the search page
+                if "filer_type" in driver.page_source:
+                    print("Senate: Already on search page")
+                else:
+                    print("Senate: Not on search page, page source snippet:")
+                    print(driver.page_source[:500])
 
             # Fill in search form
             try:
