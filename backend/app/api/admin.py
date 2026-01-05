@@ -407,6 +407,34 @@ async def populate_votes(vote_limit: int = 20, congress: int = 119, session: int
                 result = vote_details.get("result") or vote_summary.get("result", "")
                 vote_date = vote_details.get("startDate") or vote_summary.get("startDate")
 
+                # Extract bill information
+                legislation_type = vote_summary.get("legislationType") or vote_details.get("legislationType")
+                legislation_number = vote_summary.get("legislationNumber") or vote_details.get("legislationNumber")
+                legislation_url = vote_summary.get("legislationUrl") or vote_details.get("legislationUrl")
+
+                # Create or get Bill record if this vote is on a bill
+                bill_record = None
+                if legislation_type and legislation_number:
+                    bill_id_str = f"{legislation_type.lower()}{legislation_number}-{congress}"
+                    existing_bill = db.query(Bill).filter(Bill.bill_id == bill_id_str).first()
+
+                    if existing_bill:
+                        bill_record = existing_bill
+                    else:
+                        # Create new bill record with basic info
+                        bill_title = f"{legislation_type} {legislation_number}"
+                        if question:
+                            bill_title = f"{legislation_type} {legislation_number}: {question[:200]}"
+
+                        bill_record = Bill(
+                            bill_id=bill_id_str,
+                            congress=congress,
+                            title=bill_title,
+                            summary_official=legislation_url,  # Store URL in summary for now
+                        )
+                        db.add(bill_record)
+                        db.flush()  # Get the ID
+
                 # Process each member's vote
                 for member_vote in member_votes:
                     # API uses "bioguideID" (capital ID)
@@ -439,6 +467,7 @@ async def populate_votes(vote_limit: int = 20, congress: int = 119, session: int
 
                     vote = Vote(
                         vote_id=vote_id,
+                        bill_id=bill_record.id if bill_record else None,
                         politician_id=politician.id,
                         vote_position=position,
                         vote_date=vote_date,
@@ -466,6 +495,37 @@ async def populate_votes(vote_limit: int = 20, congress: int = 119, session: int
             "vote_records_added": total_votes_added
         }
 
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        db.close()
+
+
+@router.delete("/clear-votes")
+async def clear_votes(congress: int = 119):
+    """Clear all votes for a specific congress to allow re-population with bill links."""
+    db = SessionLocal()
+    try:
+        # Delete votes that match the congress (extracted from vote_id pattern)
+        # vote_id format: {bioguide_id}-{roll_number}-{congress}-{session}-{chamber}
+        from sqlalchemy import delete
+
+        # Delete all votes and bills (they'll be recreated with proper links)
+        deleted_votes = db.execute(
+            delete(Vote).where(Vote.vote_id.like(f"%-%-{congress}-%"))
+        ).rowcount
+
+        deleted_bills = db.execute(
+            delete(Bill).where(Bill.congress == congress)
+        ).rowcount
+
+        db.commit()
+        return {
+            "status": "complete",
+            "votes_deleted": deleted_votes,
+            "bills_deleted": deleted_bills,
+        }
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=str(e))

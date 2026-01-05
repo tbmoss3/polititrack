@@ -135,11 +135,24 @@ export default function VotingHistory({ summary, votes = [], bioguideId, fullNam
                 className="flex items-start justify-between p-2 bg-gray-50 rounded text-sm"
               >
                 <div className="flex-1 min-w-0 mr-2">
-                  <p className="text-gray-900 truncate" title={vote.question || 'Vote'}>
-                    {vote.question || 'Vote'}
-                  </p>
+                  {vote.bill ? (
+                    <a
+                      href={`https://www.congress.gov/bill/${118}th-congress/${vote.bill.bill_id.replace(/(\d+)-\d+$/, '$1')}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-blue-600 hover:text-blue-800 hover:underline truncate block"
+                      title={vote.bill.title}
+                    >
+                      {vote.bill.title}
+                    </a>
+                  ) : (
+                    <p className="text-gray-900 truncate" title={vote.question || 'Vote'}>
+                      {vote.question || 'Vote'}
+                    </p>
+                  )}
                   <p className="text-xs text-gray-500">
                     {new Date(vote.vote_date).toLocaleDateString()} • {vote.result || 'Unknown'}
+                    {vote.bill?.bill_id && <span className="ml-1 text-gray-400">({vote.bill.bill_id.split('-')[0].toUpperCase()})</span>}
                   </p>
                 </div>
                 <span className={getPositionStyle(vote.vote_position)}>
