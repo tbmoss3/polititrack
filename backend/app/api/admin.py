@@ -567,10 +567,32 @@ async def test_official_disclosures():
     JavaScript-heavy sites. Results may be limited without a full browser environment.
     """
     import traceback
+    import os
     results = {
         "senate": {"status": "unknown", "count": 0, "sample": [], "error": None, "note": None},
         "house": {"status": "unknown", "count": 0, "sample": [], "error": None, "note": None},
     }
+
+    # Check Selenium environment
+    results["selenium_env"] = {
+        "CHROMEDRIVER_PATH": os.environ.get("CHROMEDRIVER_PATH", "not set"),
+        "GOOGLE_CHROME_BIN": os.environ.get("GOOGLE_CHROME_BIN", "not set"),
+        "chromedriver_exists": os.path.exists(os.environ.get("CHROMEDRIVER_PATH", "/usr/bin/chromedriver")),
+        "chrome_exists": os.path.exists(os.environ.get("GOOGLE_CHROME_BIN", "/usr/bin/chromium")),
+    }
+
+    # Test Selenium driver initialization
+    try:
+        from app.services.official_disclosures import init_driver
+        driver = init_driver()
+        results["selenium_env"]["driver_init"] = "success"
+        driver.get("https://www.google.com")
+        results["selenium_env"]["test_navigation"] = "success"
+        results["selenium_env"]["current_url"] = driver.current_url
+        driver.quit()
+    except Exception as e:
+        results["selenium_env"]["driver_init"] = f"failed: {str(e)}"
+        results["selenium_env"]["driver_traceback"] = traceback.format_exc()
 
     # Test Senate scraper
     try:
