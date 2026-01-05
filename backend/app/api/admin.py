@@ -191,11 +191,36 @@ async def test_house_votes(congress: int = 119, session: int = 1, limit: int = 3
 
         # If we got votes, also try to get member votes for the first one
         vote_detail = None
+        vote_detail_raw = None
         member_votes = []
+        member_votes_raw = None
+        roll_number = None
+
         if votes:
             first_vote = votes[0]
-            roll_number = first_vote.get("rollNumber") or first_vote.get("number")
+            roll_number = first_vote.get("rollCallNumber") or first_vote.get("rollNumber") or first_vote.get("number")
             if roll_number:
+                # Also get raw responses for debugging
+                import httpx
+                params = {"api_key": settings.congress_gov_api_key, "format": "json"}
+
+                async with httpx.AsyncClient() as http_client:
+                    # Vote detail
+                    detail_resp = await http_client.get(
+                        f"https://api.congress.gov/v3/house-vote/{congress}/{session}/{roll_number}",
+                        params=params,
+                        timeout=30.0,
+                    )
+                    vote_detail_raw = detail_resp.json()
+
+                    # Member votes
+                    members_resp = await http_client.get(
+                        f"https://api.congress.gov/v3/house-vote/{congress}/{session}/{roll_number}/members",
+                        params=params,
+                        timeout=30.0,
+                    )
+                    member_votes_raw = members_resp.json()
+
                 vote_detail = await client.get_house_vote_details(congress, session, int(roll_number))
                 member_votes = await client.get_house_vote_members(congress, session, int(roll_number))
 
@@ -205,7 +230,12 @@ async def test_house_votes(congress: int = 119, session: int = 1, limit: int = 3
             "session": session,
             "votes_count": len(votes),
             "votes_sample": votes[:2] if votes else [],
+            "roll_number_used": roll_number,
+            "vote_detail_raw_keys": list(vote_detail_raw.keys()) if isinstance(vote_detail_raw, dict) else None,
+            "vote_detail_raw": vote_detail_raw,
             "vote_detail": vote_detail,
+            "member_votes_raw_keys": list(member_votes_raw.keys()) if isinstance(member_votes_raw, dict) else None,
+            "member_votes_raw": member_votes_raw,
             "member_votes_count": len(member_votes),
             "member_votes_sample": member_votes[:5] if member_votes else []
         }
