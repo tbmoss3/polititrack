@@ -560,11 +560,14 @@ async def populate_finance(limit: int = 50, cycle: int = 2024):
 # ============ STOCK TRADES ============
 
 @router.get("/test-official-disclosures")
-async def test_official_disclosures():
+async def test_official_disclosures(capture_page: bool = False):
     """Test official government disclosure scrapers.
 
     Note: Official scrapers require browser automation (Selenium/Playwright) due to
     JavaScript-heavy sites. Results may be limited without a full browser environment.
+
+    Args:
+        capture_page: If True, capture the page source for debugging
     """
     import traceback
     import os
@@ -581,7 +584,7 @@ async def test_official_disclosures():
         "chrome_exists": os.path.exists(os.environ.get("GOOGLE_CHROME_BIN", "/usr/bin/chromium")),
     }
 
-    # Test Selenium driver initialization
+    # Test Selenium driver initialization and optionally capture Senate page
     try:
         from app.services.official_disclosures import init_driver
         driver = init_driver()
@@ -589,6 +592,21 @@ async def test_official_disclosures():
         driver.get("https://www.google.com")
         results["selenium_env"]["test_navigation"] = "success"
         results["selenium_env"]["current_url"] = driver.current_url
+
+        # Capture Senate EFD page for debugging
+        if capture_page:
+            try:
+                driver.get("https://efdsearch.senate.gov/search/")
+                import time
+                time.sleep(3)  # Wait for page to load
+                results["senate_page"] = {
+                    "url": driver.current_url,
+                    "title": driver.title,
+                    "source_snippet": driver.page_source[:3000],  # First 3000 chars
+                }
+            except Exception as e:
+                results["senate_page"] = {"error": str(e)}
+
         driver.quit()
     except Exception as e:
         results["selenium_env"]["driver_init"] = f"failed: {str(e)}"
