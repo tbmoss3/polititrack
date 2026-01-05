@@ -5,18 +5,21 @@ from bs4 import BeautifulSoup
 from datetime import datetime
 from tenacity import retry, stop_after_attempt, wait_exponential
 
+# Primary sources (may be down)
 HOUSE_STOCK_WATCHER_URL = "https://housestockwatcher.com/api/all-transactions"
 SENATE_STOCK_WATCHER_URL = "https://senatestockwatcher.com/api/all-transactions"
 
+# GitHub fallback for Senate data (historical data from 2020-2021)
+SENATE_GITHUB_FALLBACK_URL = "https://raw.githubusercontent.com/timothycarambat/senate-stock-watcher-data/master/aggregate/all_transactions.json"
+
 
 class StockWatcherClient:
-    """Client for scraping House and Senate stock trade data."""
+    """Client for fetching House and Senate stock trade data."""
 
-    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
-    async def _fetch_json(self, url: str) -> list[dict]:
-        """Fetch JSON data from Stock Watcher API."""
+    async def _fetch_json(self, url: str, timeout: float = 60.0) -> list[dict]:
+        """Fetch JSON data from a URL."""
         async with httpx.AsyncClient() as client:
-            response = await client.get(url, timeout=60.0)
+            response = await client.get(url, timeout=timeout, follow_redirects=True)
             response.raise_for_status()
             return response.json()
 
@@ -30,20 +33,32 @@ class StockWatcherClient:
         try:
             data = await self._fetch_json(HOUSE_STOCK_WATCHER_URL)
             return [transform_house_trade(t) for t in data if isinstance(t, dict)]
-        except Exception:
+        except Exception as e:
+            print(f"House Stock Watcher API failed: {e}")
             return []
 
     async def get_senate_trades(self) -> list[dict]:
         """
-        Get all Senate stock trades.
+        Get all Senate stock trades. Falls back to GitHub historical data if API is down.
 
         Returns:
             List of trade dictionaries
         """
+        # Try primary API first
         try:
             data = await self._fetch_json(SENATE_STOCK_WATCHER_URL)
             return [transform_senate_trade(t) for t in data if isinstance(t, dict)]
-        except Exception:
+        except Exception as e:
+            print(f"Senate Stock Watcher API failed: {e}")
+
+        # Try GitHub fallback
+        try:
+            print("Trying GitHub fallback for Senate trades...")
+            data = await self._fetch_json(SENATE_GITHUB_FALLBACK_URL, timeout=30.0)
+            print(f"GitHub fallback returned {len(data)} Senate trades")
+            return [transform_github_senate_trade(t) for t in data if isinstance(t, dict)]
+        except Exception as e:
+            print(f"GitHub fallback also failed: {e}")
             return []
 
     async def get_all_trades(self) -> list[dict]:
@@ -56,6 +71,23 @@ class StockWatcherClient:
         house_trades = await self.get_house_trades()
         senate_trades = await self.get_senate_trades()
         return house_trades + senate_trades
+
+
+def transform_github_senate_trade(trade: dict) -> dict:
+    """Transform GitHub Senate Stock Watcher trade to our schema."""
+    return {
+        "representative": trade.get("senator", ""),
+        "chamber": "senate",
+        "transaction_date": _parse_date(trade.get("transaction_date")),
+        "disclosure_date": None,  # Not in GitHub data
+        "ticker": trade.get("ticker"),
+        "asset_description": trade.get("asset_description"),
+        "transaction_type": _normalize_transaction_type(trade.get("type")),
+        "amount_range": trade.get("amount"),
+        "amount_min": _parse_amount_min(trade.get("amount")),
+        "amount_max": _parse_amount_max(trade.get("amount")),
+        "filing_url": trade.get("ptr_link"),
+    }
 
 
 def transform_house_trade(trade: dict) -> dict:
