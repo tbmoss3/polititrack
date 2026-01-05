@@ -179,6 +179,36 @@ async def test_votes(bioguide_id: str):
         return {"status": "error", "error": str(e)}
 
 
+@router.get("/test-chamber-votes/{chamber}")
+async def test_chamber_votes(chamber: str, limit: int = 3):
+    """Test fetching votes by chamber to see response structure."""
+    if not settings.congress_gov_api_key:
+        return {"error": "API key not configured"}
+
+    client = CongressGovClient()
+    try:
+        votes = await client.get_votes(congress=119, chamber=chamber, limit=limit)
+
+        # If we got votes, also try to get details for the first one
+        vote_detail = None
+        if votes:
+            first_vote = votes[0]
+            roll_number = first_vote.get("rollNumber") or first_vote.get("number")
+            if roll_number:
+                vote_detail = await client.get_vote_details(119, chamber, int(roll_number))
+
+        return {
+            "status": "ok",
+            "chamber": chamber,
+            "votes_count": len(votes),
+            "votes_sample": votes[:2] if votes else [],
+            "vote_detail_keys": list(vote_detail.keys()) if vote_detail else [],
+            "vote_detail_sample": vote_detail
+        }
+    except Exception as e:
+        return {"status": "error", "error": str(e)}
+
+
 @router.get("/stats")
 async def get_stats():
     """Get database statistics."""
@@ -211,13 +241,13 @@ async def get_stats():
 # ============ VOTING RECORDS ============
 
 @router.post("/populate-votes")
-async def populate_votes(limit: int = 50):
+async def populate_votes(vote_limit: int = 20):
     """
     Populate voting records from Congress.gov API.
-    Due to API rate limits, this processes politicians in batches.
+    Fetches recent votes by chamber and records how each member voted.
 
     Args:
-        limit: Number of politicians to process (default 50)
+        vote_limit: Number of recent votes to fetch per chamber (default 20)
     """
     if not settings.congress_gov_api_key:
         raise HTTPException(status_code=500, detail="Congress.gov API key not configured")
@@ -226,61 +256,112 @@ async def populate_votes(limit: int = 50):
     db = SessionLocal()
 
     try:
-        # Get politicians without many votes
-        politicians = db.query(Politician).filter(
-            Politician.in_office == True
-        ).limit(limit).all()
+        # Build a mapping of bioguide_id -> politician for quick lookup
+        politicians = db.query(Politician).filter(Politician.in_office == True).all()
+        politician_map = {p.bioguide_id: p for p in politicians}
+        print(f"Loaded {len(politician_map)} politicians for vote matching")
 
-        total_votes = 0
-        processed = 0
+        total_votes_added = 0
+        votes_processed = 0
+        congress = 119  # Current Congress
 
-        for politician in politicians:
-            try:
-                votes = await client.get_member_votes(politician.bioguide_id, limit=50)
+        # Process both chambers
+        for chamber in ["house", "senate"]:
+            print(f"Fetching {chamber} votes...")
+            votes = await client.get_votes(congress=congress, chamber=chamber, limit=vote_limit)
+            print(f"Found {len(votes)} {chamber} votes")
 
-                for vote_data in votes:
-                    vote_id = f"{politician.bioguide_id}-{vote_data.get('rollNumber', '')}-{vote_data.get('congress', '')}"
+            for vote_summary in votes:
+                try:
+                    # Extract roll call number from the vote URL or data
+                    vote_url = vote_summary.get("url", "")
+                    roll_number = vote_summary.get("rollNumber") or vote_summary.get("number")
 
-                    existing = db.query(Vote).filter(Vote.vote_id == vote_id).first()
-                    if existing:
+                    if not roll_number:
+                        # Try to extract from URL
+                        if "/roll/" in vote_url:
+                            roll_number = vote_url.split("/roll/")[-1].split("?")[0]
+
+                    if not roll_number:
+                        print(f"Could not find roll number for vote: {vote_summary}")
                         continue
 
-                    # Determine vote position
-                    position = "not_voting"
-                    member_votes = vote_data.get("memberVotes", {})
-                    if isinstance(member_votes, dict):
-                        for pos, members in member_votes.items():
-                            if isinstance(members, list):
-                                for m in members:
-                                    if m.get("bioguideId") == politician.bioguide_id:
-                                        position = pos.lower().replace(" ", "_")
-                                        break
+                    roll_number = int(roll_number)
+                    print(f"Processing {chamber} vote #{roll_number}...")
 
-                    vote = Vote(
-                        vote_id=vote_id,
-                        politician_id=politician.id,
-                        vote_position=position if position in ["yes", "no", "not_voting", "present"] else "not_voting",
-                        vote_date=vote_data.get("date"),
-                        chamber=politician.chamber,
-                        question=vote_data.get("question"),
-                        result=vote_data.get("result"),
-                    )
-                    db.add(vote)
-                    total_votes += 1
+                    # Get detailed vote info including member votes
+                    vote_details = await client.get_vote_details(congress, chamber, roll_number)
 
-                processed += 1
-                # Small delay to avoid rate limiting
-                await asyncio.sleep(0.5)
+                    if not vote_details:
+                        print(f"No details for {chamber} vote #{roll_number}")
+                        continue
 
-            except Exception as e:
-                print(f"Error processing {politician.bioguide_id}: {e}")
-                continue
+                    # Get member votes from the response
+                    # Congress.gov API returns votes in different formats, try multiple keys
+                    member_votes = vote_details.get("memberVotes", {})
+                    if not member_votes:
+                        member_votes = vote_details.get("votes", {})
+
+                    question = vote_details.get("question") or vote_summary.get("question", "")
+                    result = vote_details.get("result") or vote_summary.get("result", "")
+                    vote_date = vote_details.get("date") or vote_summary.get("date")
+
+                    # Process each vote position (Yes, No, Not Voting, Present)
+                    for position_name, members in member_votes.items():
+                        if not isinstance(members, list):
+                            continue
+
+                        # Normalize position name
+                        position = position_name.lower().replace(" ", "_").replace("-", "_")
+                        if position in ["yea", "aye"]:
+                            position = "yes"
+                        elif position in ["nay"]:
+                            position = "no"
+                        elif position not in ["yes", "no", "not_voting", "present"]:
+                            position = "not_voting"
+
+                        for member in members:
+                            bioguide_id = member.get("bioguideId") or member.get("bioguide_id")
+                            if not bioguide_id:
+                                continue
+
+                            politician = politician_map.get(bioguide_id)
+                            if not politician:
+                                continue
+
+                            # Create unique vote ID
+                            vote_id = f"{bioguide_id}-{roll_number}-{congress}-{chamber}"
+
+                            # Check if already exists
+                            existing = db.query(Vote).filter(Vote.vote_id == vote_id).first()
+                            if existing:
+                                continue
+
+                            vote = Vote(
+                                vote_id=vote_id,
+                                politician_id=politician.id,
+                                vote_position=position,
+                                vote_date=vote_date,
+                                chamber=chamber,
+                                question=question[:500] if question else None,
+                                result=result[:100] if result else None,
+                            )
+                            db.add(vote)
+                            total_votes_added += 1
+
+                    votes_processed += 1
+                    # Delay to respect rate limits
+                    await asyncio.sleep(0.5)
+
+                except Exception as e:
+                    print(f"Error processing vote: {e}")
+                    continue
 
         db.commit()
         return {
             "status": "complete",
-            "politicians_processed": processed,
-            "votes_added": total_votes
+            "votes_processed": votes_processed,
+            "vote_records_added": total_votes_added
         }
 
     except Exception as e:

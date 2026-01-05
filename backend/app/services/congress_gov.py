@@ -145,12 +145,13 @@ class CongressGovClient:
         data = await self._request(f"bill/{congress}/{bill_type}/{bill_number}/actions")
         return data.get("actions", [])
 
-    async def get_member_votes(self, bioguide_id: str, limit: int = 100, offset: int = 0) -> list[dict]:
+    async def get_votes(self, congress: int = 119, chamber: str = "house", limit: int = 50, offset: int = 0) -> list[dict]:
         """
-        Get voting record for a specific member.
+        Get recent votes for a chamber.
 
         Args:
-            bioguide_id: The bioguide ID of the member
+            congress: Congress number
+            chamber: 'house' or 'senate'
             limit: Number of results
             offset: Pagination offset
 
@@ -159,46 +160,32 @@ class CongressGovClient:
         """
         try:
             data = await self._request(
-                f"member/{bioguide_id}/votes",
+                f"vote/{congress}/{chamber}",
                 {"limit": limit, "offset": offset}
             )
-            # The API returns votes in different possible keys
-            votes = data.get("votes", [])
-            if not votes:
-                votes = data.get("memberVotes", [])
-            if not votes and isinstance(data, dict):
-                # Log all keys for debugging
-                print(f"Vote API response keys for {bioguide_id}: {list(data.keys())}")
-            return votes
+            return data.get("votes", [])
         except Exception as e:
-            print(f"Error fetching votes for {bioguide_id}: {e}")
+            print(f"Error fetching votes: {e}")
             return []
 
-    async def get_all_member_votes(self, bioguide_id: str, max_votes: int = 500) -> list[dict]:
+    async def get_vote_details(self, congress: int, chamber: str, roll_number: int) -> dict:
         """
-        Get all votes for a member (handles pagination).
+        Get detailed information about a specific vote including how each member voted.
 
         Args:
-            bioguide_id: The bioguide ID of the member
-            max_votes: Maximum number of votes to fetch
+            congress: Congress number
+            chamber: 'house' or 'senate'
+            roll_number: Roll call number
 
         Returns:
-            Complete list of votes
+            Vote details dictionary
         """
-        all_votes = []
-        offset = 0
-        limit = 100
-
-        while len(all_votes) < max_votes:
-            votes = await self.get_member_votes(bioguide_id, limit, offset)
-            if not votes:
-                break
-            all_votes.extend(votes)
-            if len(votes) < limit:
-                break
-            offset += limit
-
-        return all_votes[:max_votes]
+        try:
+            data = await self._request(f"vote/{congress}/{chamber}/{roll_number}")
+            return data.get("vote", {})
+        except Exception as e:
+            print(f"Error fetching vote details: {e}")
+            return {}
 
 
 # State name to 2-letter code mapping
