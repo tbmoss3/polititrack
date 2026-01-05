@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import {
   getPolitician,
   getVotingSummary,
+  getPoliticianVotes,
   getPoliticianFinance,
   getTopDonors,
   getPoliticianStockTrades,
@@ -26,6 +27,12 @@ export default function PoliticianPage() {
   const { data: votingSummary } = useQuery({
     queryKey: ['votingSummary', id],
     queryFn: () => getVotingSummary(id!),
+    enabled: !!id,
+  })
+
+  const { data: votesData } = useQuery({
+    queryKey: ['votes', id],
+    queryFn: () => getPoliticianVotes(id!, { page_size: 10 }),
     enabled: !!id,
   })
 
@@ -179,6 +186,7 @@ export default function PoliticianPage() {
 
         <VotingHistory
           summary={votingSummary || null}
+          votes={votesData?.items || []}
           bioguideId={politician.bioguide_id}
           fullName={politician.full_name}
         />
