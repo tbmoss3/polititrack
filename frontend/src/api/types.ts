@@ -1,5 +1,11 @@
 // API Response Types
 
+export interface OfficialDisclosureLinks {
+  financial_disclosure_url: string
+  financial_disclosure_source: string
+  capitol_trades_url: string
+}
+
 export interface Politician {
   id: string
   bioguide_id: string
@@ -18,6 +24,7 @@ export interface Politician {
   title: string
   created_at: string
   updated_at: string
+  official_disclosures: OfficialDisclosureLinks | null
 }
 
 export interface PoliticianDetail extends Politician {

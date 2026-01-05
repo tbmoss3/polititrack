@@ -124,6 +124,26 @@ export default function PoliticianPage() {
                 𝕏 @{politician.twitter_handle}
               </a>
             )}
+            {politician.official_disclosures && (
+              <>
+                <a
+                  href={politician.official_disclosures.capitol_trades_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="btn-secondary text-sm"
+                >
+                  📈 Stock Trades
+                </a>
+                <a
+                  href={politician.official_disclosures.financial_disclosure_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="btn-secondary text-sm"
+                >
+                  📄 Official Filings
+                </a>
+              </>
+            )}
           </div>
         </div>
 
@@ -173,7 +193,7 @@ export default function PoliticianPage() {
       {/* Disclaimer */}
       <div className="card bg-gray-50">
         <p className="text-xs text-gray-500 text-center">
-          Data sourced from ProPublica Congress API, FEC, and House/Senate Stock Watcher.
+          Data sourced from Congress.gov API, FEC, and Capitol Trades.
           Last updated: {new Date(politician.updated_at).toLocaleDateString()}.
           This is a non-partisan transparency tool.
         </p>
