@@ -312,7 +312,8 @@ async def populate_votes(vote_limit: int = 20, congress: int = 119, session: int
 
         for vote_summary in votes:
             try:
-                roll_number = vote_summary.get("rollNumber") or vote_summary.get("number")
+                # API returns "rollCallNumber" field
+                roll_number = vote_summary.get("rollCallNumber") or vote_summary.get("rollNumber") or vote_summary.get("number")
 
                 if not roll_number:
                     print(f"Could not find roll number for vote: {vote_summary}")
