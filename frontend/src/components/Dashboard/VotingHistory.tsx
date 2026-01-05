@@ -3,14 +3,31 @@ import type { VotingSummary } from '../../api/types'
 
 interface VotingHistoryProps {
   summary: VotingSummary | null
+  bioguideId?: string
+  fullName?: string
 }
 
-export default function VotingHistory({ summary }: VotingHistoryProps) {
-  if (!summary) {
+export default function VotingHistory({ summary, bioguideId, fullName }: VotingHistoryProps) {
+  // Congress.gov URL for member's votes
+  const congressGovUrl = bioguideId
+    ? `https://www.congress.gov/member/${fullName?.toLowerCase().replace(/\s+/g, '-') || 'member'}/${bioguideId}?q=%7B%22bill-status%22%3A%22floor-vote%22%7D`
+    : 'https://www.congress.gov/members'
+
+  if (!summary || summary.total_votes === 0) {
     return (
       <div className="card">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">Voting Record</h3>
-        <p className="text-gray-500">No voting data available</p>
+        <div className="flex justify-between items-start mb-4">
+          <h3 className="text-lg font-semibold text-gray-900">Voting Record</h3>
+          <a
+            href={congressGovUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-sm text-blue-600 hover:text-blue-800 hover:underline"
+          >
+            View on Congress.gov
+          </a>
+        </div>
+        <p className="text-gray-500">No voting data available yet. Check Congress.gov for the latest records.</p>
       </div>
     )
   }
@@ -24,7 +41,17 @@ export default function VotingHistory({ summary }: VotingHistoryProps) {
 
   return (
     <div className="card">
-      <h3 className="text-lg font-semibold text-gray-900 mb-4">Voting Record</h3>
+      <div className="flex justify-between items-start mb-4">
+        <h3 className="text-lg font-semibold text-gray-900">Voting Record</h3>
+        <a
+          href={congressGovUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-sm text-blue-600 hover:text-blue-800 hover:underline"
+        >
+          View all votes on Congress.gov
+        </a>
+      </div>
 
       <div className="grid grid-cols-2 gap-4 mb-4">
         <div className="text-center p-3 bg-gray-50 rounded-lg">

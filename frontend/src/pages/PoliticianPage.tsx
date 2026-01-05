@@ -177,11 +177,17 @@ export default function PoliticianPage() {
           breakdown={politician.transparency_breakdown}
         />
 
-        <VotingHistory summary={votingSummary || null} />
+        <VotingHistory
+          summary={votingSummary || null}
+          bioguideId={politician.bioguide_id}
+          fullName={politician.full_name}
+        />
 
         <FinanceChart
           finances={financeData?.items || []}
           topDonors={donorsData?.items || []}
+          fullName={politician.full_name}
+          state={politician.state}
         />
 
         <StockTrades

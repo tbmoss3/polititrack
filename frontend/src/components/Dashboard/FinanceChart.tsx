@@ -13,9 +13,19 @@ import type { CampaignFinance, TopDonor } from '../../api/types'
 interface FinanceChartProps {
   finances: CampaignFinance[]
   topDonors: TopDonor[]
+  fullName?: string
+  state?: string
 }
 
-export default function FinanceChart({ finances, topDonors }: FinanceChartProps) {
+export default function FinanceChart({ finances, topDonors, fullName, state }: FinanceChartProps) {
+  // FEC URL for candidate search
+  const fecUrl = fullName
+    ? `https://www.fec.gov/data/candidates/?q=${encodeURIComponent(fullName)}&is_active_candidate=true`
+    : 'https://www.fec.gov/data/candidates/'
+
+  // OpenSecrets URL for more detailed finance info
+  const openSecretsUrl = 'https://www.opensecrets.org/members-of-congress'
+
   // Format currency
   const formatCurrency = (value: number) => {
     if (value >= 1000000) {
@@ -42,7 +52,17 @@ export default function FinanceChart({ finances, topDonors }: FinanceChartProps)
 
   return (
     <div className="card">
-      <h3 className="text-lg font-semibold text-gray-900 mb-4">Campaign Finance</h3>
+      <div className="flex justify-between items-start mb-4">
+        <h3 className="text-lg font-semibold text-gray-900">Campaign Finance</h3>
+        <a
+          href={fecUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-sm text-blue-600 hover:text-blue-800 hover:underline"
+        >
+          View on FEC.gov
+        </a>
+      </div>
 
       {currentFinance && (
         <div className="grid grid-cols-3 gap-4 mb-6">
@@ -112,7 +132,30 @@ export default function FinanceChart({ finances, topDonors }: FinanceChartProps)
       )}
 
       {finances.length === 0 && topDonors.length === 0 && (
-        <p className="text-gray-500">No campaign finance data available</p>
+        <p className="text-gray-500">No campaign finance data available yet. Check the FEC website for the latest filings.</p>
+      )}
+
+      {/* PAC vs Individual breakdown for current cycle */}
+      {currentFinance && (currentFinance.total_from_pacs || currentFinance.total_from_individuals) && (
+        <div className="mt-4 pt-4 border-t">
+          <h4 className="font-medium text-gray-700 mb-3">Funding Sources</h4>
+          <div className="flex gap-4">
+            <div className="flex-1 p-3 bg-purple-50 rounded-lg text-center">
+              <p className="text-lg font-bold text-purple-700">
+                {currentFinance.pac_percentage?.toFixed(0) || 0}%
+              </p>
+              <p className="text-xs text-gray-600">From PACs</p>
+            </div>
+            <div className="flex-1 p-3 bg-teal-50 rounded-lg text-center">
+              <p className="text-lg font-bold text-teal-700">
+                {currentFinance.total_from_individuals && currentFinance.total_raised
+                  ? ((currentFinance.total_from_individuals / currentFinance.total_raised) * 100).toFixed(0)
+                  : 0}%
+              </p>
+              <p className="text-xs text-gray-600">From Individuals</p>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )
