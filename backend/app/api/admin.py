@@ -602,10 +602,14 @@ async def populate_stocks():
             if existing:
                 continue
 
+            # Use transaction_date as fallback for disclosure_date if not available
+            transaction_date = trade.get("transaction_date")
+            disclosure_date = trade.get("disclosure_date") or transaction_date
+
             stock_trade = StockTrade(
                 politician_id=politician_id,
-                transaction_date=trade.get("transaction_date"),
-                disclosure_date=trade.get("disclosure_date"),
+                transaction_date=transaction_date,
+                disclosure_date=disclosure_date,
                 ticker=trade.get("ticker"),
                 asset_description=trade.get("asset_description"),
                 transaction_type=trade.get("transaction_type"),
