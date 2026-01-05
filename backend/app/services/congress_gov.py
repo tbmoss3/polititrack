@@ -162,7 +162,14 @@ class CongressGovClient:
                 f"member/{bioguide_id}/votes",
                 {"limit": limit, "offset": offset}
             )
-            return data.get("votes", [])
+            # The API returns votes in different possible keys
+            votes = data.get("votes", [])
+            if not votes:
+                votes = data.get("memberVotes", [])
+            if not votes and isinstance(data, dict):
+                # Log all keys for debugging
+                print(f"Vote API response keys for {bioguide_id}: {list(data.keys())}")
+            return votes
         except Exception as e:
             print(f"Error fetching votes for {bioguide_id}: {e}")
             return []

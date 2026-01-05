@@ -158,13 +158,22 @@ async def test_votes(bioguide_id: str):
 
     client = CongressGovClient()
     try:
-        votes = await client.get_member_votes(bioguide_id, limit=5)
+        # Get raw response to see structure
+        import httpx
+        params = {"api_key": settings.congress_gov_api_key, "format": "json", "limit": 3}
+        async with httpx.AsyncClient() as http_client:
+            response = await http_client.get(
+                f"https://api.congress.gov/v3/member/{bioguide_id}/votes",
+                params=params,
+                timeout=30.0,
+            )
+            raw_data = response.json()
+
         return {
             "status": "ok",
             "bioguide_id": bioguide_id,
-            "votes_count": len(votes),
-            "sample_vote": votes[0] if votes else None,
-            "all_keys": list(votes[0].keys()) if votes else []
+            "raw_keys": list(raw_data.keys()) if isinstance(raw_data, dict) else "not a dict",
+            "raw_data_sample": raw_data
         }
     except Exception as e:
         return {"status": "error", "error": str(e)}
