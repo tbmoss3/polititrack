@@ -503,12 +503,13 @@ async def populate_votes(vote_limit: int = 20, congress: int = 119, session: int
 
 
 @router.post("/populate-sponsored-bills")
-async def populate_sponsored_bills(limit: int = 50, congress: int = 119):
+async def populate_sponsored_bills(limit: int = 50, offset: int = 0, congress: int = 119):
     """
     Populate bills sponsored by politicians from Congress.gov API.
 
     Args:
         limit: Number of politicians to process
+        offset: Offset for pagination (skip first N politicians)
         congress: Congress number
     """
     if not settings.congress_gov_api_key:
@@ -521,7 +522,7 @@ async def populate_sponsored_bills(limit: int = 50, congress: int = 119):
         # Get politicians
         politicians = db.query(Politician).filter(
             Politician.in_office == True
-        ).limit(limit).all()
+        ).offset(offset).limit(limit).all()
 
         total_bills_added = 0
         total_bills_updated = 0
