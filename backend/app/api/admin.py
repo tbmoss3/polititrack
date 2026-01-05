@@ -559,12 +559,51 @@ async def populate_finance(limit: int = 50, cycle: int = 2024):
 
 # ============ STOCK TRADES ============
 
+@router.get("/test-official-disclosures")
+async def test_official_disclosures():
+    """Test official government disclosure scrapers."""
+    results = {
+        "senate": {"status": "unknown", "count": 0, "sample": [], "error": None},
+        "house": {"status": "unknown", "count": 0, "sample": [], "error": None},
+    }
+
+    # Test Senate scraper
+    try:
+        from app.services.official_disclosures import SenateDisclosureScraper
+        scraper = SenateDisclosureScraper()
+        trades = await scraper.get_recent_transactions(days=90, limit=5)
+        results["senate"]["status"] = "ok"
+        results["senate"]["count"] = len(trades)
+        results["senate"]["sample"] = trades[:3]
+    except Exception as e:
+        results["senate"]["status"] = "error"
+        results["senate"]["error"] = str(e)
+
+    # Test House scraper
+    try:
+        from app.services.official_disclosures import HouseDisclosureScraper
+        scraper = HouseDisclosureScraper()
+        trades = await scraper.get_recent_transactions(limit=5)
+        results["house"]["status"] = "ok"
+        results["house"]["count"] = len(trades)
+        results["house"]["sample"] = trades[:3]
+    except Exception as e:
+        results["house"]["status"] = "error"
+        results["house"]["error"] = str(e)
+
+    return results
+
+
 @router.post("/populate-stocks")
-async def populate_stocks():
+async def populate_stocks(use_official: bool = True):
     """
-    Populate stock trade data from House/Senate Stock Watcher.
+    Populate stock trade data from official government sources or third-party APIs.
+
+    Args:
+        use_official: If True (default), try official sources first (slower but authoritative).
+                     If False, use third-party APIs only (faster but may be unavailable).
     """
-    client = StockWatcherClient()
+    client = StockWatcherClient(use_official=use_official)
     db = SessionLocal()
 
     try:
