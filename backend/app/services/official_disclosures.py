@@ -71,9 +71,9 @@ def get_capitol_trades_url(last_name: str = "", first_name: str = "") -> str:
     """
     # Capitol Trades allows searching by politician name
     if last_name:
-        # URL encode the name for search
-        name_query = quote_plus(f"{first_name} {last_name}".strip())
-        return f"{CAPITOL_TRADES_POLITICIAN_URL}?q={name_query}"
+        # URL encode the name for search - use lowercase with + for spaces
+        name_query = f"{first_name} {last_name}".strip().lower().replace(" ", "+")
+        return f"{CAPITOL_TRADES_POLITICIAN_URL}?search={name_query}"
     return CAPITOL_TRADES_URL
 
 
