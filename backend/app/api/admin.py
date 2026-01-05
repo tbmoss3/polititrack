@@ -150,6 +150,26 @@ async def test_congress_api():
         return {"status": "error", "error": str(e), "key_length": len(settings.congress_gov_api_key)}
 
 
+@router.get("/test-votes/{bioguide_id}")
+async def test_votes(bioguide_id: str):
+    """Test fetching votes for a specific member."""
+    if not settings.congress_gov_api_key:
+        return {"error": "API key not configured"}
+
+    client = CongressGovClient()
+    try:
+        votes = await client.get_member_votes(bioguide_id, limit=5)
+        return {
+            "status": "ok",
+            "bioguide_id": bioguide_id,
+            "votes_count": len(votes),
+            "sample_vote": votes[0] if votes else None,
+            "all_keys": list(votes[0].keys()) if votes else []
+        }
+    except Exception as e:
+        return {"status": "error", "error": str(e)}
+
+
 @router.get("/stats")
 async def get_stats():
     """Get database statistics."""
