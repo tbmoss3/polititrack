@@ -502,6 +502,96 @@ async def populate_votes(vote_limit: int = 20, congress: int = 119, session: int
         db.close()
 
 
+@router.post("/populate-sponsored-bills")
+async def populate_sponsored_bills(limit: int = 50, congress: int = 119):
+    """
+    Populate bills sponsored by politicians from Congress.gov API.
+
+    Args:
+        limit: Number of politicians to process
+        congress: Congress number
+    """
+    if not settings.congress_gov_api_key:
+        raise HTTPException(status_code=500, detail="Congress.gov API key not configured")
+
+    client = CongressGovClient()
+    db = SessionLocal()
+
+    try:
+        # Get politicians
+        politicians = db.query(Politician).filter(
+            Politician.in_office == True
+        ).limit(limit).all()
+
+        total_bills = 0
+        politicians_processed = 0
+
+        for politician in politicians:
+            try:
+                print(f"Fetching sponsored bills for {politician.first_name} {politician.last_name} ({politician.bioguide_id})...")
+
+                # Fetch sponsored legislation
+                sponsored = await client.get_member_sponsored_legislation(politician.bioguide_id, limit=50)
+
+                for legislation in sponsored:
+                    bill_type = legislation.get("type", "").lower()
+                    bill_number = legislation.get("number")
+                    bill_congress = legislation.get("congress")
+
+                    if not bill_number or not bill_congress:
+                        continue
+
+                    # Only include bills from recent congresses
+                    if bill_congress < congress - 1:
+                        continue
+
+                    bill_id_str = f"{bill_type}{bill_number}-{bill_congress}"
+
+                    # Check if bill exists
+                    existing = db.query(Bill).filter(Bill.bill_id == bill_id_str).first()
+
+                    if existing:
+                        # Update sponsor if not set
+                        if not existing.sponsor_id:
+                            existing.sponsor_id = politician.id
+                            existing.updated_at = datetime.utcnow()
+                    else:
+                        # Create new bill
+                        bill = Bill(
+                            bill_id=bill_id_str,
+                            congress=bill_congress,
+                            title=legislation.get("title", f"{bill_type.upper()} {bill_number}")[:500],
+                            sponsor_id=politician.id,
+                            introduced_date=legislation.get("introducedDate"),
+                            latest_action=legislation.get("latestAction", {}).get("text"),
+                            latest_action_date=legislation.get("latestAction", {}).get("actionDate"),
+                        )
+                        db.add(bill)
+                        total_bills += 1
+
+                politicians_processed += 1
+                db.commit()
+
+                # Rate limit
+                await asyncio.sleep(0.5)
+
+            except Exception as e:
+                print(f"Error processing {politician.bioguide_id}: {e}")
+                continue
+
+        return {
+            "status": "complete",
+            "politicians_processed": politicians_processed,
+            "bills_added": total_bills,
+        }
+
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        db.close()
+
+
 @router.delete("/clear-votes")
 async def clear_votes(congress: int = 119):
     """Clear all votes for a specific congress to allow re-population with bill links."""
