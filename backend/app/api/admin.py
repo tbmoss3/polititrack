@@ -537,11 +537,11 @@ async def populate_sponsored_bills(limit: int = 50, congress: int = 119):
                 print(f"  Found {len(sponsored)} sponsored items")
 
                 for legislation in sponsored:
-                    bill_type = legislation.get("type", "").lower()
+                    bill_type = (legislation.get("type") or "").lower()
                     bill_number = legislation.get("number")
                     bill_congress = legislation.get("congress")
 
-                    if not bill_number or not bill_congress:
+                    if not bill_type or not bill_number or not bill_congress:
                         continue
 
                     # Only include bills from recent congresses
