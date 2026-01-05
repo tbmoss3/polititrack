@@ -561,14 +561,15 @@ async def populate_finance(limit: int = 50, cycle: int = 2024):
 
 @router.get("/official-disclosure-links")
 async def get_official_disclosure_links():
-    """Get links to official government disclosure sites.
+    """Get links to official government disclosure sites and trading data.
 
-    Instead of scraping, users can visit these official sources directly
-    to view authoritative financial disclosure documents.
+    Instead of scraping, users can visit these sources directly
+    to view authoritative financial disclosure documents and trading data.
     """
     from app.services.official_disclosures import (
         SENATE_EFD_HOME_URL,
         HOUSE_DISCLOSURE_SEARCH_URL,
+        CAPITOL_TRADES_URL,
         ADDITIONAL_RESOURCES,
     )
 
@@ -583,8 +584,13 @@ async def get_official_disclosure_links():
             "url": HOUSE_DISCLOSURE_SEARCH_URL,
             "description": "Search for Representatives' financial disclosure reports",
         },
+        "capitol_trades": {
+            "name": "Capitol Trades",
+            "url": CAPITOL_TRADES_URL,
+            "description": "Aggregated congressional stock trading data with 35,000+ trades from 200+ politicians",
+        },
         "additional_resources": ADDITIONAL_RESOURCES,
-        "note": "Visit these official sites to view authoritative disclosure documents. The sites require accepting usage agreements.",
+        "note": "Visit these sites to view disclosure documents and trading data.",
     }
 
 

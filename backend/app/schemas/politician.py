@@ -41,10 +41,11 @@ class PoliticianUpdate(BaseModel):
 
 
 class OfficialDisclosureLinks(BaseModel):
-    """Links to official government disclosure sources."""
+    """Links to official government disclosure sources and trading data."""
 
     financial_disclosure_url: str = Field(..., description="Link to official financial disclosure search")
     financial_disclosure_source: str = Field(..., description="Name of the disclosure source")
+    capitol_trades_url: str = Field(..., description="Link to Capitol Trades for stock trading data")
 
 
 class PoliticianResponse(PoliticianBase):

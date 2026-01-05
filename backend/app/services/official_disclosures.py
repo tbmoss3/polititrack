@@ -7,6 +7,7 @@ source documents.
 Sources:
 - Senate: efdsearch.senate.gov - Electronic Financial Disclosure
 - House: disclosures-clerk.house.gov - Financial Disclosure Reports
+- Capitol Trades: capitoltrades.com - Aggregated congressional trading data
 """
 
 from urllib.parse import quote_plus
@@ -17,6 +18,10 @@ SENATE_EFD_SEARCH_URL = "https://efdsearch.senate.gov/search/"
 SENATE_EFD_HOME_URL = "https://efdsearch.senate.gov/search/home/"
 HOUSE_DISCLOSURE_URL = "https://disclosures-clerk.house.gov/FinancialDisclosure"
 HOUSE_DISCLOSURE_SEARCH_URL = "https://disclosures-clerk.house.gov/FinancialDisclosure#Search"
+
+# Capitol Trades - aggregated congressional trading data
+CAPITOL_TRADES_URL = "https://www.capitoltrades.com/trades"
+CAPITOL_TRADES_POLITICIAN_URL = "https://www.capitoltrades.com/politicians"
 
 
 def get_senate_disclosure_url(last_name: str = "", first_name: str = "") -> str:
@@ -53,6 +58,25 @@ def get_house_disclosure_url(last_name: str = "", state: str = "") -> str:
     return HOUSE_DISCLOSURE_SEARCH_URL
 
 
+def get_capitol_trades_url(last_name: str = "", first_name: str = "") -> str:
+    """
+    Get the URL to view a politician's trades on Capitol Trades.
+
+    Args:
+        last_name: Politician's last name
+        first_name: Politician's first name
+
+    Returns:
+        URL to Capitol Trades (politician search or trades page)
+    """
+    # Capitol Trades allows searching by politician name
+    if last_name:
+        # URL encode the name for search
+        name_query = quote_plus(f"{first_name} {last_name}".strip())
+        return f"{CAPITOL_TRADES_POLITICIAN_URL}?q={name_query}"
+    return CAPITOL_TRADES_URL
+
+
 def get_disclosure_links(chamber: str, last_name: str = "", first_name: str = "", state: str = "") -> dict:
     """
     Get official disclosure links for a politician based on their chamber.
@@ -70,11 +94,13 @@ def get_disclosure_links(chamber: str, last_name: str = "", first_name: str = ""
         return {
             "financial_disclosure_url": get_senate_disclosure_url(last_name, first_name),
             "financial_disclosure_source": "Senate Electronic Financial Disclosure (EFD)",
+            "capitol_trades_url": get_capitol_trades_url(last_name, first_name),
         }
     else:
         return {
             "financial_disclosure_url": get_house_disclosure_url(last_name, state),
             "financial_disclosure_source": "House Office of the Clerk - Financial Disclosure",
+            "capitol_trades_url": get_capitol_trades_url(last_name, first_name),
         }
 
 
