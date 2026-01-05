@@ -187,7 +187,6 @@ export default function PoliticianPage() {
           finances={financeData?.items || []}
           topDonors={donorsData?.items || []}
           fullName={politician.full_name}
-          state={politician.state}
         />
 
         <StockTrades

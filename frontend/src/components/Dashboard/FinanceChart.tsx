@@ -14,17 +14,13 @@ interface FinanceChartProps {
   finances: CampaignFinance[]
   topDonors: TopDonor[]
   fullName?: string
-  state?: string
 }
 
-export default function FinanceChart({ finances, topDonors, fullName, state }: FinanceChartProps) {
+export default function FinanceChart({ finances, topDonors, fullName }: FinanceChartProps) {
   // FEC URL for candidate search
   const fecUrl = fullName
     ? `https://www.fec.gov/data/candidates/?q=${encodeURIComponent(fullName)}&is_active_candidate=true`
     : 'https://www.fec.gov/data/candidates/'
-
-  // OpenSecrets URL for more detailed finance info
-  const openSecretsUrl = 'https://www.opensecrets.org/members-of-congress'
 
   // Format currency
   const formatCurrency = (value: number) => {
