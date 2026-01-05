@@ -330,13 +330,15 @@ async def populate_votes(vote_limit: int = 20, congress: int = 119, session: int
 
                 # Get vote details for question/result
                 vote_details = await client.get_house_vote_details(congress, session, roll_number)
-                question = vote_details.get("question") or vote_summary.get("question", "")
+                # API uses "voteQuestion" and "startDate" field names
+                question = vote_details.get("voteQuestion") or vote_summary.get("voteQuestion", "")
                 result = vote_details.get("result") or vote_summary.get("result", "")
-                vote_date = vote_details.get("date") or vote_summary.get("date")
+                vote_date = vote_details.get("startDate") or vote_summary.get("startDate")
 
                 # Process each member's vote
                 for member_vote in member_votes:
-                    bioguide_id = member_vote.get("bioguideId") or member_vote.get("bioguide_id")
+                    # API uses "bioguideID" (capital ID)
+                    bioguide_id = member_vote.get("bioguideID") or member_vote.get("bioguideId") or member_vote.get("bioguide_id")
                     if not bioguide_id:
                         continue
 
@@ -344,13 +346,13 @@ async def populate_votes(vote_limit: int = 20, congress: int = 119, session: int
                     if not politician:
                         continue
 
-                    # Get vote position
-                    position = member_vote.get("vote", "").lower().replace(" ", "_").replace("-", "_")
-                    if position in ["yea", "aye", "yes"]:
+                    # Get vote position - API uses "voteCast" field
+                    vote_cast = member_vote.get("voteCast", "").lower()
+                    if vote_cast in ["yea", "aye", "yes"]:
                         position = "yes"
-                    elif position in ["nay", "no"]:
+                    elif vote_cast in ["nay", "no"]:
                         position = "no"
-                    elif position in ["present"]:
+                    elif vote_cast in ["present"]:
                         position = "present"
                     else:
                         position = "not_voting"

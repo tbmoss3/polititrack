@@ -197,11 +197,13 @@ class CongressGovClient:
             roll_number: Roll call number
 
         Returns:
-            List of member votes
+            List of member votes with keys: bioguideID, firstName, lastName, voteCast, voteParty, voteState
         """
         try:
             data = await self._request(f"house-vote/{congress}/{session}/{roll_number}/members")
-            return data.get("houseRollCallVoteMembers", [])
+            # Response structure: { "houseRollCallVoteMemberVotes": { "results": [...] } }
+            member_data = data.get("houseRollCallVoteMemberVotes", {})
+            return member_data.get("results", [])
         except Exception as e:
             print(f"Error fetching house vote members: {e}")
             return []
