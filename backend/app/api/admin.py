@@ -596,13 +596,46 @@ async def test_official_disclosures(capture_page: bool = False):
         # Capture Senate EFD page for debugging
         if capture_page:
             try:
+                from selenium.webdriver.common.by import By
                 driver.get("https://efdsearch.senate.gov/search/")
                 import time
                 time.sleep(3)  # Wait for page to load
+
+                # Look for form elements on the page
+                form_elements = []
+                try:
+                    inputs = driver.find_elements(By.TAG_NAME, "input")
+                    for inp in inputs:
+                        form_elements.append({
+                            "tag": "input",
+                            "id": inp.get_attribute("id"),
+                            "name": inp.get_attribute("name"),
+                            "type": inp.get_attribute("type"),
+                        })
+                    buttons = driver.find_elements(By.TAG_NAME, "button")
+                    for btn in buttons:
+                        form_elements.append({
+                            "tag": "button",
+                            "id": btn.get_attribute("id"),
+                            "text": btn.text[:50] if btn.text else None,
+                            "type": btn.get_attribute("type"),
+                        })
+                    checkboxes = driver.find_elements(By.CSS_SELECTOR, "input[type='checkbox']")
+                    for cb in checkboxes:
+                        form_elements.append({
+                            "tag": "checkbox",
+                            "id": cb.get_attribute("id"),
+                            "name": cb.get_attribute("name"),
+                        })
+                except Exception as fe:
+                    form_elements = [{"error": str(fe)}]
+
                 results["senate_page"] = {
                     "url": driver.current_url,
                     "title": driver.title,
-                    "source_snippet": driver.page_source[:3000],  # First 3000 chars
+                    "source_length": len(driver.page_source),
+                    "form_elements": form_elements,
+                    "source_snippet": driver.page_source[:5000],  # First 5000 chars
                 }
             except Exception as e:
                 results["senate_page"] = {"error": str(e)}
