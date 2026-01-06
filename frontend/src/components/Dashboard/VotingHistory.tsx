@@ -161,7 +161,7 @@ export default function VotingHistory({ summary, votes = [], bioguideId, fullNam
                     {vote.bill.title}
                   </p>
                 )}
-                {vote.bill?.summary_ai && (
+                {vote.bill?.summary_ai && !vote.bill.summary_ai.startsWith('http') && (
                   <p className="text-gray-500 text-xs mt-1 line-clamp-2 italic">
                     {vote.bill.summary_ai}
                   </p>
