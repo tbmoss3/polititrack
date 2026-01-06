@@ -21,11 +21,11 @@ const SCORE_EXPLANATIONS = {
     note: 'The STOCK Act requires disclosure within 45 days of a transaction.',
   },
   vote_participation: {
-    title: 'Voting Participation (30 pts)',
+    title: 'Voting Participation (20 pts)',
     description: 'Percentage of votes where the member voted Yes or No.',
     criteria: [
-      { label: 'Points = Rate x 30', condition: 'Based on participation rate' },
-      { label: '15 points', condition: 'If no voting data available' },
+      { label: 'Points = Rate x 20', condition: 'Based on participation rate' },
+      { label: '10 points', condition: 'If no voting data available' },
     ],
     note: 'Higher participation indicates active engagement in legislative duties.',
   },
@@ -39,11 +39,11 @@ const SCORE_EXPLANATIONS = {
     note: 'Data sourced from the Federal Election Commission (FEC).',
   },
   financial_disclosure: {
-    title: 'General Disclosure Compliance (20 pts)',
+    title: 'Financial Disclosure Compliance (30 pts)',
     description: 'Overall transparency based on available public information.',
     criteria: [
-      { label: '5 points', condition: 'Has official website listed' },
-      { label: '10 points', condition: 'Has stock trades or finance data' },
+      { label: '10 points', condition: 'Has official website listed' },
+      { label: '15 points', condition: 'Has stock trades or finance data' },
       { label: '5 points', condition: 'Base points for being in system' },
     ],
     note: 'Reflects overall accessibility of public information.',
@@ -91,7 +91,7 @@ export default function TransparencyScore({ score, breakdown }: TransparencyScor
           <ScoreBar
             label="Vote Participation"
             score={breakdown.vote_participation}
-            maxScore={30}
+            maxScore={20}
           />
           <ScoreBar
             label="Campaign Finance"
@@ -101,7 +101,7 @@ export default function TransparencyScore({ score, breakdown }: TransparencyScor
           <ScoreBar
             label="Financial Disclosure"
             score={breakdown.financial_disclosure}
-            maxScore={20}
+            maxScore={30}
           />
         </div>
       )}

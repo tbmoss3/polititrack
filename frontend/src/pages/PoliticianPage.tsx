@@ -10,7 +10,6 @@ import {
 import TransparencyScore from '../components/Dashboard/TransparencyScore'
 import VotingHistory from '../components/Dashboard/VotingHistory'
 import FinanceChart from '../components/Dashboard/FinanceChart'
-import NetWorthChart from '../components/Dashboard/NetWorthChart'
 import Loading from '../components/common/Loading'
 import clsx from 'clsx'
 
@@ -183,12 +182,6 @@ export default function PoliticianPage() {
         <FinanceChart
           finances={financeData?.items || []}
           topDonors={donorsData?.items || []}
-          fullName={politician.full_name}
-        />
-
-        <NetWorthChart
-          disclosureUrl={politician.official_disclosures?.financial_disclosure_url}
-          capitolTradesUrl={politician.official_disclosures?.capitol_trades_url}
           fullName={politician.full_name}
         />
       </div>

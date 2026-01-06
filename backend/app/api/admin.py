@@ -1043,10 +1043,10 @@ async def calculate_transparency_scores():
     Calculate transparency scores for all politicians.
 
     Score breakdown (0-100):
-    - Financial disclosure timeliness: 30 points
     - Stock trade disclosure speed: 30 points
     - Voting record completeness: 20 points
     - Campaign finance reporting: 20 points
+    - Financial disclosure compliance: 30 points
     """
     db = SessionLocal()
 
@@ -1088,7 +1088,7 @@ async def calculate_transparency_scores():
                 # No stock trades - give benefit of doubt
                 score += 15
 
-            # 2. Voting participation (30 pts)
+            # 2. Voting participation (20 pts)
             vote_count = db.query(Vote).filter(
                 Vote.politician_id == politician.id
             ).count()
@@ -1100,9 +1100,9 @@ async def calculate_transparency_scores():
 
             if vote_count > 0:
                 participation_rate = yes_no_count / vote_count
-                score += participation_rate * 30
+                score += participation_rate * 20
             else:
-                score += 15  # No data
+                score += 10  # No data
 
             # 3. Campaign finance reporting (20 pts)
             has_finance = db.query(CampaignFinance).filter(
@@ -1114,12 +1114,12 @@ async def calculate_transparency_scores():
             else:
                 score += 10  # No data
 
-            # 4. General disclosure compliance (20 pts)
-            # Based on having complete profile data
+            # 4. Financial disclosure compliance (30 pts)
+            # Based on having complete profile data and disclosures
             if politician.website_url:
-                score += 5
-            if stock_trades or has_finance:
                 score += 10
+            if stock_trades or has_finance:
+                score += 15
             score += 5  # Base points for being in the system
 
             # Update politician
