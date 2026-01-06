@@ -633,6 +633,86 @@ async def clear_votes(congress: int = 119):
         db.close()
 
 
+@router.post("/populate-bill-summaries")
+async def populate_bill_summaries(limit: int = 50, congress: int = 119):
+    """
+    Fetch and populate summaries for bills from Congress.gov API.
+
+    Args:
+        limit: Number of bills to process
+        congress: Congress number to filter bills
+    """
+    if not settings.congress_gov_api_key:
+        raise HTTPException(status_code=500, detail="Congress.gov API key not configured")
+
+    client = CongressGovClient()
+    db = SessionLocal()
+
+    try:
+        import re
+
+        # Get bills without summaries
+        bills = db.query(Bill).filter(
+            Bill.congress == congress,
+            Bill.summary_official.is_(None)
+        ).limit(limit).all()
+
+        updated = 0
+        errors = []
+
+        for bill in bills:
+            try:
+                # Parse bill_id to get type and number
+                # Format: hr1234-119 or hres432-119
+                match = re.match(r'^([a-z]+)(\d+)-(\d+)$', bill.bill_id)
+                if not match:
+                    continue
+
+                bill_type = match.group(1)
+                bill_number = int(match.group(2))
+                bill_congress = int(match.group(3))
+
+                # Fetch summaries from Congress.gov
+                summaries = await client.get_bill_summaries(bill_congress, bill_type, bill_number)
+
+                if summaries:
+                    # Get the most recent/detailed summary (usually the last one)
+                    best_summary = summaries[-1] if summaries else None
+                    if best_summary:
+                        # Extract plain text from HTML, limit to 500 chars
+                        summary_text = best_summary.get("text", "")
+                        # Remove HTML tags
+                        summary_text = re.sub(r'<[^>]+>', '', summary_text)
+                        # Limit length
+                        if len(summary_text) > 500:
+                            summary_text = summary_text[:497] + "..."
+
+                        bill.summary_official = summary_text
+                        bill.updated_at = datetime.utcnow()
+                        updated += 1
+
+                # Rate limit
+                await asyncio.sleep(0.3)
+
+            except Exception as e:
+                errors.append(f"Error processing {bill.bill_id}: {str(e)}")
+                continue
+
+        db.commit()
+        return {
+            "status": "complete",
+            "bills_processed": len(bills),
+            "bills_updated": updated,
+            "errors": errors[:10] if errors else [],
+        }
+
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        db.close()
+
+
 # ============ CAMPAIGN FINANCE ============
 
 @router.post("/populate-finance")

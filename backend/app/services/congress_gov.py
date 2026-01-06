@@ -145,6 +145,25 @@ class CongressGovClient:
         data = await self._request(f"bill/{congress}/{bill_type}/{bill_number}/actions")
         return data.get("actions", [])
 
+    async def get_bill_summaries(self, congress: int, bill_type: str, bill_number: int) -> list[dict]:
+        """
+        Get summaries for a specific bill.
+
+        Args:
+            congress: Congress number
+            bill_type: Type of bill (hr, s, etc.)
+            bill_number: Bill number
+
+        Returns:
+            List of summary dictionaries with text and actionDesc
+        """
+        try:
+            data = await self._request(f"bill/{congress}/{bill_type}/{bill_number}/summaries")
+            return data.get("summaries", [])
+        except Exception as e:
+            print(f"Error fetching bill summaries: {e}")
+            return []
+
     async def get_house_votes(self, congress: int = 119, session: int = 1, limit: int = 50, offset: int = 0) -> list[dict]:
         """
         Get House roll call votes for a specific Congress and session.

@@ -54,7 +54,7 @@ async def get_politician_votes(
                     id=bill.id,
                     bill_id=bill.bill_id,
                     title=bill.title,
-                    summary_ai=bill.summary_ai,
+                    summary_ai=bill.summary_official or bill.summary_ai,
                 )
 
         items.append(
@@ -151,7 +151,7 @@ async def get_vote(
                 id=bill.id,
                 bill_id=bill.bill_id,
                 title=bill.title,
-                summary_ai=bill.summary_ai,
+                summary_ai=bill.summary_official or bill.summary_ai,
             )
 
     return VoteDetailResponse(
