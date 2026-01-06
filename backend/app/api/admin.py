@@ -651,10 +651,14 @@ async def populate_bill_summaries(limit: int = 50, congress: int = 119):
     try:
         import re
 
-        # Get bills without summaries
+        # Get bills without text summaries (NULL or URL-only)
+        from sqlalchemy import or_
         bills = db.query(Bill).filter(
             Bill.congress == congress,
-            Bill.summary_official.is_(None)
+            or_(
+                Bill.summary_official.is_(None),
+                Bill.summary_official.like('http%')
+            )
         ).limit(limit).all()
 
         updated = 0
