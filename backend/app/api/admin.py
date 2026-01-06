@@ -244,6 +244,137 @@ async def test_house_votes(congress: int = 119, session: int = 1, limit: int = 3
         return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
 
 
+@router.get("/test-fec/{candidate_name}")
+async def test_fec(candidate_name: str, state: str = None):
+    """Test FEC API response to check available fields."""
+    if not settings.fec_api_key:
+        return {"error": "FEC API key not configured"}
+
+    client = FECClient()
+    try:
+        candidates = await client.search_candidates(candidate_name, state)
+        if not candidates:
+            return {"error": "No candidates found", "searched": candidate_name}
+
+        candidate = candidates[0]
+        candidate_id = candidate.get("candidate_id")
+
+        totals = await client.get_candidate_totals(candidate_id, 2024)
+
+        return {
+            "candidate_name": candidate.get("name"),
+            "candidate_id": candidate_id,
+            "totals_count": len(totals) if totals else 0,
+            "totals_sample": totals[0] if totals else None,
+            "cash_fields_check": {
+                "cash_on_hand_end_period": totals[0].get("cash_on_hand_end_period") if totals else None,
+                "cash_on_hand": totals[0].get("cash_on_hand") if totals else None,
+                "last_cash_on_hand_end_period": totals[0].get("last_cash_on_hand_end_period") if totals else None,
+            } if totals else None
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@router.post("/refresh-finance")
+async def refresh_finance(limit: int = 50, cycle: int = 2024, chamber: str | None = None):
+    """
+    Re-fetch campaign finance data from FEC API, forcing updates to ALL fields.
+    This replaces existing records instead of merging.
+
+    Args:
+        limit: Number of politicians to process
+        cycle: Election cycle year
+        chamber: Optional filter for 'house' or 'senate'
+    """
+    if not settings.fec_api_key:
+        raise HTTPException(status_code=500, detail="FEC API key not configured")
+
+    client = FECClient()
+    db = SessionLocal()
+
+    try:
+        query = db.query(Politician).filter(Politician.in_office == True)
+        if chamber:
+            query = query.filter(Politician.chamber == chamber)
+        politicians = query.limit(limit).all()
+
+        finance_updated = 0
+        finance_added = 0
+        processed = 0
+        errors = []
+
+        for politician in politicians:
+            try:
+                # Search for candidate in FEC
+                full_name = f"{politician.last_name}, {politician.first_name}"
+                candidates = await client.search_candidates(full_name, politician.state)
+
+                if not candidates:
+                    # Try just last name
+                    candidates = await client.search_candidates(politician.last_name, politician.state)
+
+                if not candidates:
+                    continue
+
+                # Use first matching candidate
+                candidate = candidates[0]
+                candidate_id = candidate.get("candidate_id")
+
+                if not candidate_id:
+                    continue
+
+                # Get financial totals
+                totals = await client.get_candidate_totals(candidate_id, cycle)
+
+                if totals:
+                    for total in totals:
+                        finance_data = transform_fec_totals_to_finance(total, str(politician.id))
+
+                        # Check if exists
+                        existing = db.query(CampaignFinance).filter(
+                            CampaignFinance.politician_id == politician.id,
+                            CampaignFinance.cycle == finance_data.get("cycle")
+                        ).first()
+
+                        if existing:
+                            # Force update ALL fields
+                            existing.total_raised = finance_data.get("total_raised")
+                            existing.total_spent = finance_data.get("total_spent")
+                            existing.cash_on_hand = finance_data.get("cash_on_hand")
+                            existing.total_from_pacs = finance_data.get("total_from_pacs")
+                            existing.total_from_individuals = finance_data.get("total_from_individuals")
+                            existing.last_filed = finance_data.get("last_filed")
+                            existing.updated_at = datetime.utcnow()
+                            finance_updated += 1
+                        else:
+                            finance = CampaignFinance(**finance_data)
+                            db.add(finance)
+                            finance_added += 1
+
+                processed += 1
+                await asyncio.sleep(0.3)
+
+            except Exception as e:
+                errors.append(f"{politician.full_name}: {str(e)}")
+                continue
+
+        db.commit()
+        return {
+            "status": "complete",
+            "politicians_processed": processed,
+            "finance_records_updated": finance_updated,
+            "finance_records_added": finance_added,
+            "errors": errors[:10] if errors else []
+        }
+
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        db.close()
+
+
 @router.get("/test-stock-watcher")
 async def test_stock_watcher():
     """Test Stock Watcher APIs to see what they return."""
