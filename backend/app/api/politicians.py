@@ -179,7 +179,7 @@ def _calculate_transparency_breakdown(politician: Politician, db: Session) -> Tr
             else:
                 stock_score = 5.0
 
-    # 2. Voting participation (30 pts max)
+    # 2. Voting participation (20 pts max)
     vote_count = db.execute(
         select(func.count()).where(Vote.politician_id == politician.id)
     ).scalar() or 0
@@ -190,10 +190,10 @@ def _calculate_transparency_breakdown(politician: Politician, db: Session) -> Tr
         .where(Vote.vote_position.in_(["yes", "no"]))
     ).scalar() or 0
 
-    vote_score = 15.0  # Default if no data
+    vote_score = 10.0  # Default if no data
     if vote_count > 0:
         participation_rate = yes_no_count / vote_count
-        vote_score = participation_rate * 30.0
+        vote_score = participation_rate * 20.0
 
     # 3. Campaign finance reporting (20 pts max)
     has_finance = db.execute(
@@ -202,12 +202,12 @@ def _calculate_transparency_breakdown(politician: Politician, db: Session) -> Tr
 
     finance_score = 20.0 if has_finance > 0 else 10.0
 
-    # 4. General disclosure compliance (20 pts max)
+    # 4. General disclosure compliance (30 pts max)
     disclosure_score = 5.0  # Base points
     if politician.website_url:
-        disclosure_score += 5.0
-    if stock_trades or has_finance:
         disclosure_score += 10.0
+    if stock_trades or has_finance:
+        disclosure_score += 15.0
 
     total = stock_score + vote_score + finance_score + disclosure_score
 
