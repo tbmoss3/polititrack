@@ -277,13 +277,14 @@ async def test_fec(candidate_name: str, state: str = None):
 
 
 @router.post("/refresh-finance")
-async def refresh_finance(limit: int = 50, cycle: int = 2024, chamber: str | None = None):
+async def refresh_finance(limit: int = 50, offset: int = 0, cycle: int = 2024, chamber: str | None = None):
     """
     Re-fetch campaign finance data from FEC API, forcing updates to ALL fields.
     This replaces existing records instead of merging.
 
     Args:
         limit: Number of politicians to process
+        offset: Number of politicians to skip (for pagination)
         cycle: Election cycle year
         chamber: Optional filter for 'house' or 'senate'
     """
@@ -297,7 +298,7 @@ async def refresh_finance(limit: int = 50, cycle: int = 2024, chamber: str | Non
         query = db.query(Politician).filter(Politician.in_office == True)
         if chamber:
             query = query.filter(Politician.chamber == chamber)
-        politicians = query.limit(limit).all()
+        politicians = query.offset(offset).limit(limit).all()
 
         finance_updated = 0
         finance_added = 0
