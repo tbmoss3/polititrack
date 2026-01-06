@@ -122,12 +122,18 @@ class FECClient:
 
 def transform_fec_totals_to_finance(totals: dict, politician_id: str) -> dict:
     """Transform FEC totals data to our CampaignFinance schema."""
+    # Cash on hand can be in different fields depending on endpoint
+    cash_on_hand = (
+        totals.get("cash_on_hand_end_period") or
+        totals.get("cash_on_hand") or
+        totals.get("last_cash_on_hand_end_period")
+    )
     return {
         "politician_id": politician_id,
         "cycle": totals.get("cycle"),
         "total_raised": totals.get("receipts"),
         "total_spent": totals.get("disbursements"),
-        "cash_on_hand": totals.get("cash_on_hand_end_period"),
+        "cash_on_hand": cash_on_hand,
         "total_from_pacs": totals.get("political_party_committee_contributions", 0) +
                           totals.get("other_political_committee_contributions", 0),
         "total_from_individuals": totals.get("individual_contributions"),
