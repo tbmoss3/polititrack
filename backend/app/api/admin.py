@@ -858,14 +858,14 @@ async def populate_donors(limit: int = 50, cycle: int = 2024):
 
                 # Collect contributions from all committees
                 all_contributions = []
-                for committee in committees[:3]:  # Limit to top 3 committees
+                for committee in committees[:2]:  # Limit to top 2 committees
                     committee_id = committee.get("committee_id")
                     if committee_id:
                         contributions = await client.get_committee_contributions(
-                            committee_id, cycle=cycle, per_page=100
+                            committee_id, cycle=cycle, per_page=50
                         )
                         all_contributions.extend(contributions)
-                        await asyncio.sleep(0.2)  # Rate limit
+                        await asyncio.sleep(1.0)  # Rate limit - FEC is strict
 
                 if all_contributions:
                     # Aggregate top donors
@@ -890,13 +890,14 @@ async def populate_donors(limit: int = 50, cycle: int = 2024):
 
                 processed += 1
                 db.commit()
-                await asyncio.sleep(0.3)
+                await asyncio.sleep(2.0)  # Longer delay between politicians for FEC rate limits
 
             except Exception as e:
                 error_msg = f"Error processing donors for {politician.bioguide_id}: {str(e)}"
                 print(error_msg)
                 errors.append(error_msg)
                 db.rollback()
+                await asyncio.sleep(3.0)  # Extra delay after error
                 continue
 
         return {
