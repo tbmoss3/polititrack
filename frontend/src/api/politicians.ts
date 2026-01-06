@@ -7,7 +7,6 @@ import type {
   VotingSummary,
   CampaignFinance,
   TopDonor,
-  StockTradeListResponse,
   StatesMapResponse,
   DistrictInfo,
 } from './types'
@@ -66,15 +65,6 @@ export async function getTopDonors(
   params?: { cycle?: number; limit?: number }
 ): Promise<{ items: TopDonor[]; cycle: number; total: number }> {
   const { data } = await apiClient.get(`/finance/donors/${politicianId}`, { params })
-  return data
-}
-
-// Stock Trades
-export async function getPoliticianStockTrades(
-  politicianId: string,
-  params?: { page?: number; page_size?: number }
-): Promise<StockTradeListResponse> {
-  const { data } = await apiClient.get(`/stocks/by-politician/${politicianId}`, { params })
   return data
 }
 
