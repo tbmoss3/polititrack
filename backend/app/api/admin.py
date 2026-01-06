@@ -801,6 +801,118 @@ async def populate_finance(limit: int = 50, cycle: int = 2024):
         db.close()
 
 
+@router.post("/populate-donors")
+async def populate_donors(limit: int = 50, cycle: int = 2024):
+    """
+    Populate top donor data from FEC API.
+
+    Fetches contribution data for politicians who have campaign finance records
+    and aggregates top donors.
+
+    Args:
+        limit: Number of politicians to process
+        cycle: Election cycle year
+    """
+    if not settings.fec_api_key:
+        raise HTTPException(status_code=500, detail="FEC API key not configured")
+
+    client = FECClient()
+    db = SessionLocal()
+
+    try:
+        # Get politicians who have finance data for this cycle
+        politicians_with_finance = db.query(Politician).join(
+            CampaignFinance,
+            CampaignFinance.politician_id == Politician.id
+        ).filter(
+            CampaignFinance.cycle == cycle,
+            Politician.in_office == True
+        ).limit(limit).all()
+
+        donors_added = 0
+        processed = 0
+        errors = []
+
+        for politician in politicians_with_finance:
+            try:
+                print(f"Fetching donors for {politician.first_name} {politician.last_name}...")
+
+                # Search for candidate in FEC
+                full_name = f"{politician.last_name}, {politician.first_name}"
+                candidates = await client.search_candidates(full_name, politician.state)
+
+                if not candidates:
+                    continue
+
+                candidate = candidates[0]
+                candidate_id = candidate.get("candidate_id")
+
+                if not candidate_id:
+                    continue
+
+                # Get committees for this candidate
+                committees = await client.get_candidate_committees(candidate_id)
+
+                if not committees:
+                    continue
+
+                # Collect contributions from all committees
+                all_contributions = []
+                for committee in committees[:3]:  # Limit to top 3 committees
+                    committee_id = committee.get("committee_id")
+                    if committee_id:
+                        contributions = await client.get_committee_contributions(
+                            committee_id, cycle=cycle, per_page=100
+                        )
+                        all_contributions.extend(contributions)
+                        await asyncio.sleep(0.2)  # Rate limit
+
+                if all_contributions:
+                    # Aggregate top donors
+                    donors = aggregate_top_donors(
+                        all_contributions, cycle, str(politician.id), limit=20
+                    )
+
+                    for donor_data in donors:
+                        # Check if exists
+                        existing = db.query(TopDonor).filter(
+                            TopDonor.politician_id == politician.id,
+                            TopDonor.cycle == donor_data["cycle"],
+                            TopDonor.donor_name == donor_data["donor_name"]
+                        ).first()
+
+                        if existing:
+                            existing.total_amount = donor_data["total_amount"]
+                        else:
+                            donor = TopDonor(**donor_data)
+                            db.add(donor)
+                            donors_added += 1
+
+                processed += 1
+                db.commit()
+                await asyncio.sleep(0.3)
+
+            except Exception as e:
+                error_msg = f"Error processing donors for {politician.bioguide_id}: {str(e)}"
+                print(error_msg)
+                errors.append(error_msg)
+                db.rollback()
+                continue
+
+        return {
+            "status": "complete",
+            "politicians_processed": processed,
+            "donors_added": donors_added,
+            "errors": errors[:10] if errors else []
+        }
+
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        db.close()
+
+
 # ============ STOCK TRADES ============
 
 @router.get("/official-disclosure-links")
