@@ -6,12 +6,11 @@ import {
   getPoliticianVotes,
   getPoliticianFinance,
   getTopDonors,
-  getPoliticianStockTrades,
 } from '../api/politicians'
 import TransparencyScore from '../components/Dashboard/TransparencyScore'
 import VotingHistory from '../components/Dashboard/VotingHistory'
 import FinanceChart from '../components/Dashboard/FinanceChart'
-import StockTrades from '../components/Dashboard/StockTrades'
+import NetWorthChart from '../components/Dashboard/NetWorthChart'
 import Loading from '../components/common/Loading'
 import clsx from 'clsx'
 
@@ -45,12 +44,6 @@ export default function PoliticianPage() {
   const { data: donorsData } = useQuery({
     queryKey: ['donors', id],
     queryFn: () => getTopDonors(id!),
-    enabled: !!id,
-  })
-
-  const { data: stockData } = useQuery({
-    queryKey: ['stocks', id],
-    queryFn: () => getPoliticianStockTrades(id!),
     enabled: !!id,
   })
 
@@ -155,7 +148,7 @@ export default function PoliticianPage() {
         </div>
 
         {/* Quick Stats */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-6 pt-6 border-t">
+        <div className="grid grid-cols-3 gap-4 mt-6 pt-6 border-t">
           <div className="text-center">
             <p className="text-2xl font-bold text-gray-900">{politician.total_votes}</p>
             <p className="text-sm text-gray-500">Total Votes</p>
@@ -163,10 +156,6 @@ export default function PoliticianPage() {
           <div className="text-center">
             <p className="text-2xl font-bold text-gray-900">{politician.total_bills_sponsored}</p>
             <p className="text-sm text-gray-500">Bills Sponsored</p>
-          </div>
-          <div className="text-center">
-            <p className="text-2xl font-bold text-gray-900">{politician.total_stock_trades}</p>
-            <p className="text-sm text-gray-500">Stock Trades</p>
           </div>
           <div className="text-center">
             <p className="text-2xl font-bold text-gray-900">
@@ -197,9 +186,10 @@ export default function PoliticianPage() {
           fullName={politician.full_name}
         />
 
-        <StockTrades
-          trades={stockData?.items || []}
-          total={stockData?.total || 0}
+        <NetWorthChart
+          disclosureUrl={politician.official_disclosures?.financial_disclosure_url}
+          capitolTradesUrl={politician.official_disclosures?.capitol_trades_url}
+          fullName={politician.full_name}
         />
       </div>
 

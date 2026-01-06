@@ -24,6 +24,9 @@ export async function getPoliticians(params?: {
   return data
 }
 
+// Alias for backwards compatibility
+export const listPoliticians = getPoliticians
+
 export async function getPoliticiansByState(state: string): Promise<Politician[]> {
   const { data } = await apiClient.get(`/politicians/by-state/${state}`)
   return data

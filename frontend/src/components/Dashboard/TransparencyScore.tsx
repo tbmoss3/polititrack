@@ -84,11 +84,6 @@ export default function TransparencyScore({ score, breakdown }: TransparencyScor
       {breakdown && (
         <div className="space-y-3">
           <ScoreBar
-            label="Financial Disclosure"
-            score={breakdown.financial_disclosure}
-            maxScore={30}
-          />
-          <ScoreBar
             label="Stock Disclosure"
             score={breakdown.stock_disclosure}
             maxScore={30}
@@ -96,11 +91,16 @@ export default function TransparencyScore({ score, breakdown }: TransparencyScor
           <ScoreBar
             label="Vote Participation"
             score={breakdown.vote_participation}
-            maxScore={20}
+            maxScore={30}
           />
           <ScoreBar
             label="Campaign Finance"
             score={breakdown.campaign_finance}
+            maxScore={20}
+          />
+          <ScoreBar
+            label="Financial Disclosure"
+            score={breakdown.financial_disclosure}
             maxScore={20}
           />
         </div>
