@@ -295,7 +295,7 @@ async def refresh_finance(limit: int = 50, offset: int = 0, cycle: int = 2024, c
     db = SessionLocal()
 
     try:
-        query = db.query(Politician).filter(Politician.in_office == True)
+        query = db.query(Politician).filter(Politician.in_office == True).order_by(Politician.last_name, Politician.first_name)
         if chamber:
             query = query.filter(Politician.chamber == chamber)
         politicians = query.offset(offset).limit(limit).all()
