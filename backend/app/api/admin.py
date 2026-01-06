@@ -720,13 +720,14 @@ async def populate_bill_summaries(limit: int = 50, congress: int = 119):
 # ============ CAMPAIGN FINANCE ============
 
 @router.post("/populate-finance")
-async def populate_finance(limit: int = 50, cycle: int = 2024):
+async def populate_finance(limit: int = 50, cycle: int = 2024, chamber: str | None = None):
     """
     Populate campaign finance data from FEC API.
 
     Args:
         limit: Number of politicians to process
         cycle: Election cycle year
+        chamber: Optional filter for 'house' or 'senate'
     """
     if not settings.fec_api_key:
         raise HTTPException(status_code=500, detail="FEC API key not configured")
@@ -735,9 +736,10 @@ async def populate_finance(limit: int = 50, cycle: int = 2024):
     db = SessionLocal()
 
     try:
-        politicians = db.query(Politician).filter(
-            Politician.in_office == True
-        ).limit(limit).all()
+        query = db.query(Politician).filter(Politician.in_office == True)
+        if chamber:
+            query = query.filter(Politician.chamber == chamber)
+        politicians = query.limit(limit).all()
 
         finance_added = 0
         processed = 0
