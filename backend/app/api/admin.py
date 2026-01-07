@@ -635,6 +635,66 @@ async def populate_votes(vote_limit: int = 20, congress: int = 119, session: int
         db.close()
 
 
+@router.get("/test-senate-votes")
+async def test_senate_votes(congress: int = 119, session: int = 1):
+    """Test the Senate votes XML feed to debug any issues."""
+    import httpx
+
+    results = {
+        "menu_url": f"https://www.senate.gov/legislative/LIS/roll_call_lists/vote_menu_{congress}_{session}.xml",
+        "menu_status": None,
+        "menu_votes_count": 0,
+        "sample_votes": [],
+        "roll_call_test": None,
+        "error": None,
+    }
+
+    try:
+        async with httpx.AsyncClient() as client:
+            # Test menu fetch
+            menu_resp = await client.get(results["menu_url"], timeout=30.0, follow_redirects=True)
+            results["menu_status"] = menu_resp.status_code
+
+            if menu_resp.status_code == 200:
+                import xml.etree.ElementTree as ET
+                root = ET.fromstring(menu_resp.text)
+                votes = root.findall(".//vote")
+                results["menu_votes_count"] = len(votes)
+                results["sample_votes"] = [
+                    {
+                        "vote_number": v.findtext("vote_number"),
+                        "question": v.findtext("question", "")[:50],
+                    }
+                    for v in votes[:3]
+                ]
+
+                # Test single roll call fetch
+                if votes:
+                    vote_num = int(votes[0].findtext("vote_number", "1"))
+                    roll_url = f"https://www.senate.gov/legislative/LIS/roll_call_votes/vote{congress}{session}/vote_{congress}_{session}_{vote_num:05d}.xml"
+                    results["roll_call_url"] = roll_url
+
+                    roll_resp = await client.get(roll_url, timeout=30.0, follow_redirects=True)
+                    results["roll_call_status"] = roll_resp.status_code
+
+                    if roll_resp.status_code == 200:
+                        roll_root = ET.fromstring(roll_resp.text)
+                        members = roll_root.findall(".//member")
+                        results["roll_call_test"] = {
+                            "members_count": len(members),
+                            "sample_member": {
+                                "name": members[0].findtext("last_name") if members else None,
+                                "state": members[0].findtext("state") if members else None,
+                                "vote": members[0].findtext("vote_cast") if members else None,
+                            } if members else None
+                        }
+
+    except Exception as e:
+        results["error"] = str(e)
+
+    return results
+
+
 @router.post("/populate-senate-votes")
 async def populate_senate_votes(vote_limit: int = 50, congress: int = 119, session: int = 1):
     """
