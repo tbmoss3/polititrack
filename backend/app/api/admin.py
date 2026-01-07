@@ -10,6 +10,7 @@ from app.models import Politician, Vote, Bill, CampaignFinance, TopDonor, StockT
 from app.services.congress_gov import CongressGovClient, transform_member_to_politician
 from app.services.fec import FECClient, transform_fec_totals_to_finance, aggregate_top_donors
 from app.services.stock_watcher import StockWatcherClient, match_trade_to_politician
+from app.services.senate_votes import SenateVotesClient, parse_senate_vote_date, normalize_vote_position
 from app.config import get_settings
 
 router = APIRouter()
@@ -625,6 +626,179 @@ async def populate_votes(vote_limit: int = 20, congress: int = 119, session: int
             "session": session,
             "votes_processed": votes_processed,
             "vote_records_added": total_votes_added
+        }
+
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        db.close()
+
+
+@router.post("/populate-senate-votes")
+async def populate_senate_votes(vote_limit: int = 50, congress: int = 119, session: int = 1):
+    """
+    Populate Senate voting records from senate.gov XML feeds.
+
+    Fetches roll call votes from the Senate's Legislative Information System
+    and records how each senator voted.
+
+    Args:
+        vote_limit: Number of recent votes to fetch (default 50)
+        congress: Congress number (default 119)
+        session: Session number (1 or 2, default 1)
+    """
+    client = SenateVotesClient()
+    db = SessionLocal()
+
+    try:
+        # Build mapping of (state, last_name) -> politician for matching
+        senators = db.query(Politician).filter(
+            Politician.in_office == True,
+            Politician.chamber == "senate"
+        ).all()
+
+        # Create lookup by state + last_name (normalized)
+        senator_map = {}
+        for s in senators:
+            key = (s.state.upper(), s.last_name.upper())
+            senator_map[key] = s
+        print(f"Loaded {len(senator_map)} Senators for vote matching")
+
+        total_votes_added = 0
+        votes_processed = 0
+        errors = []
+
+        # Get vote menu to find available votes
+        print(f"Fetching Senate vote menu for Congress {congress}, Session {session}...")
+        vote_menu = await client.get_vote_menu(congress, session)
+        print(f"Found {len(vote_menu)} total Senate votes")
+
+        # Process most recent votes up to limit
+        for vote_summary in vote_menu[:vote_limit]:
+            try:
+                vote_num = int(vote_summary.get("vote_number", 0))
+                if not vote_num:
+                    continue
+
+                print(f"Processing Senate vote #{vote_num}...")
+
+                # Get detailed roll call with member votes
+                roll_call = await client.get_roll_call_vote(congress, session, vote_num)
+
+                if not roll_call.get("members"):
+                    print(f"No member votes for Senate vote #{vote_num}")
+                    continue
+
+                # Parse vote date
+                vote_date = parse_senate_vote_date(roll_call.get("vote_date"))
+                question = roll_call.get("question", "")
+                result = roll_call.get("result", "")
+                issue = roll_call.get("issue", "")
+
+                # Create or find Bill record if this is a bill vote
+                bill_record = None
+                if issue:
+                    # Parse issue like "S. 5" or "H.R. 123" or "PN 373"
+                    issue_clean = issue.strip()
+                    if issue_clean.startswith("S."):
+                        bill_type = "s"
+                        bill_num = issue_clean.replace("S.", "").strip().split()[0]
+                    elif issue_clean.startswith("H.R."):
+                        bill_type = "hr"
+                        bill_num = issue_clean.replace("H.R.", "").strip().split()[0]
+                    elif issue_clean.startswith("H.J.Res."):
+                        bill_type = "hjres"
+                        bill_num = issue_clean.replace("H.J.Res.", "").strip().split()[0]
+                    elif issue_clean.startswith("S.J.Res."):
+                        bill_type = "sjres"
+                        bill_num = issue_clean.replace("S.J.Res.", "").strip().split()[0]
+                    else:
+                        bill_type = None
+                        bill_num = None
+
+                    if bill_type and bill_num:
+                        bill_id_str = f"{bill_type}{bill_num}-{congress}"
+                        existing_bill = db.query(Bill).filter(Bill.bill_id == bill_id_str).first()
+
+                        if existing_bill:
+                            bill_record = existing_bill
+                        else:
+                            bill_title = vote_summary.get("title") or f"{issue}: {question}"
+                            bill_record = Bill(
+                                bill_id=bill_id_str,
+                                congress=congress,
+                                title=bill_title[:500] if bill_title else issue,
+                            )
+                            db.add(bill_record)
+                            db.flush()
+
+                # Process each senator's vote
+                for member in roll_call.get("members", []):
+                    state = member.get("state", "").upper()
+                    last_name = member.get("last_name", "").upper()
+
+                    # Look up senator
+                    key = (state, last_name)
+                    senator = senator_map.get(key)
+
+                    if not senator:
+                        # Try partial match for hyphenated names
+                        for (s, ln), sen in senator_map.items():
+                            if s == state and (last_name in ln or ln in last_name):
+                                senator = sen
+                                break
+
+                    if not senator:
+                        continue
+
+                    # Normalize vote position
+                    position = normalize_vote_position(member.get("vote_cast"))
+
+                    # Create unique vote ID
+                    vote_id = f"{senator.bioguide_id}-{vote_num}-{congress}-{session}-senate"
+
+                    # Check if already exists
+                    existing = db.query(Vote).filter(Vote.vote_id == vote_id).first()
+                    if existing:
+                        continue
+
+                    vote = Vote(
+                        vote_id=vote_id,
+                        bill_id=bill_record.id if bill_record else None,
+                        politician_id=senator.id,
+                        vote_position=position,
+                        vote_date=vote_date,
+                        chamber="senate",
+                        question=question[:500] if question else None,
+                        result=result[:100] if result else None,
+                    )
+                    db.add(vote)
+                    total_votes_added += 1
+
+                votes_processed += 1
+
+                # Commit after each vote to avoid losing progress
+                if votes_processed % 10 == 0:
+                    db.commit()
+
+                # Rate limit
+                await asyncio.sleep(0.3)
+
+            except Exception as e:
+                error_msg = f"Error processing Senate vote {vote_summary.get('vote_number')}: {str(e)}"
+                print(error_msg)
+                errors.append(error_msg)
+                continue
+
+        db.commit()
+        return {
+            "status": "complete",
+            "congress": congress,
+            "session": session,
+            "votes_processed": votes_processed,
+            "vote_records_added": total_votes_added,
+            "errors": errors[:10] if errors else []
         }
 
     except Exception as e:
