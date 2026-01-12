@@ -10,10 +10,12 @@ export const apiClient = axios.create({
   },
 })
 
-// Request interceptor for debugging
+// Request interceptor (logging only in development)
 apiClient.interceptors.request.use(
   (config) => {
-    console.log(`[API] ${config.method?.toUpperCase()} ${config.url}`)
+    if (import.meta.env.DEV) {
+      console.log(`[API] ${config.method?.toUpperCase()} ${config.url}`)
+    }
     return config
   },
   (error) => {
@@ -25,7 +27,9 @@ apiClient.interceptors.request.use(
 apiClient.interceptors.response.use(
   (response) => response,
   (error) => {
-    console.error('[API Error]', error.response?.data || error.message)
+    if (import.meta.env.DEV) {
+      console.error('[API Error]', error.response?.data || error.message)
+    }
     return Promise.reject(error)
   }
 )

@@ -1,24 +1,15 @@
+import React from 'react'
 import { Link } from 'react-router-dom'
-import type { Politician } from '../../api/types'
 import clsx from 'clsx'
+import type { Politician } from '../../api/types'
+import { getPartyBadgeClass, getPartyName } from '../../utils'
 
 interface PoliticianCardProps {
   politician: Politician
 }
 
-export default function PoliticianCard({ politician }: PoliticianCardProps) {
-  const partyBadgeClass = clsx('party-badge', {
-    'party-badge-d': politician.party === 'D',
-    'party-badge-r': politician.party === 'R',
-    'party-badge-i': politician.party === 'I' || politician.party === 'ID',
-  })
-
-  const partyName = {
-    D: 'Democrat',
-    R: 'Republican',
-    I: 'Independent',
-    ID: 'Independent',
-  }[politician.party || 'I'] || 'Unknown'
+function PoliticianCardComponent({ politician }: PoliticianCardProps) {
+  const partyBadgeClass = getPartyBadgeClass(politician.party)
 
   // Convert to number in case it comes as string from API
   const score = politician.transparency_score ? Number(politician.transparency_score) : null
@@ -55,7 +46,7 @@ export default function PoliticianCard({ politician }: PoliticianCardProps) {
           </p>
 
           <p className="text-xs text-gray-500 mt-1">
-            {partyName} • {politician.chamber === 'senate' ? 'Senate' : 'House'}
+            {getPartyName(politician.party)} • {politician.chamber === 'senate' ? 'Senate' : 'House'}
           </p>
         </div>
 
@@ -75,3 +66,8 @@ export default function PoliticianCard({ politician }: PoliticianCardProps) {
     </Link>
   )
 }
+
+// Memoize to prevent unnecessary re-renders in lists
+const PoliticianCard = React.memo(PoliticianCardComponent)
+
+export default PoliticianCard

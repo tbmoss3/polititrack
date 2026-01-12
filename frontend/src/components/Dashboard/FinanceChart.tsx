@@ -9,6 +9,7 @@ import {
   Legend,
 } from 'recharts'
 import type { CampaignFinance, TopDonor } from '../../api/types'
+import { formatCurrency } from '../../utils'
 
 interface FinanceChartProps {
   finances: CampaignFinance[]
@@ -21,17 +22,6 @@ export default function FinanceChart({ finances, topDonors, fullName }: FinanceC
   const fecUrl = fullName
     ? `https://www.fec.gov/data/candidates/?q=${encodeURIComponent(fullName)}&is_active_candidate=true`
     : 'https://www.fec.gov/data/candidates/'
-
-  // Format currency
-  const formatCurrency = (value: number) => {
-    if (value >= 1000000) {
-      return `$${(value / 1000000).toFixed(1)}M`
-    }
-    if (value >= 1000) {
-      return `$${(value / 1000).toFixed(0)}K`
-    }
-    return `$${value}`
-  }
 
   // Prepare chart data
   const chartData = finances

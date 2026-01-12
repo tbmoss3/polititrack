@@ -1,9 +1,14 @@
 """Admin endpoints for data population and management."""
 
-from fastapi import APIRouter, HTTPException, BackgroundTasks
-from sqlalchemy import text
-from datetime import datetime
 import asyncio
+import logging
+import re
+import xml.etree.ElementTree as ET
+from datetime import datetime
+
+import httpx
+from fastapi import APIRouter, HTTPException, BackgroundTasks
+from sqlalchemy import text, delete, or_
 
 from app.database import SessionLocal
 from app.models import Politician, Vote, Bill, CampaignFinance, TopDonor, StockTrade
@@ -12,6 +17,9 @@ from app.services.fec import FECClient, transform_fec_totals_to_finance, aggrega
 from app.services.stock_watcher import StockWatcherClient, match_trade_to_politician
 from app.services.senate_votes import SenateVotesClient, parse_senate_vote_date, normalize_vote_position
 from app.config import get_settings
+from app.utils.db import update_model
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 settings = get_settings()
@@ -42,9 +50,9 @@ async def run_politician_population():
         # Current Congress (119th as of 2025)
         congress = 119
 
-        print(f"Fetching members from Congress {congress}...")
+        logger.info(f"Fetching members from Congress {congress}...")
         members = await client.get_all_members(congress)
-        print(f"Found {len(members)} members")
+        logger.info(f"Found {len(members)} members")
 
         for member in members:
             data = transform_member_to_politician(member)
@@ -58,10 +66,8 @@ async def run_politician_population():
             ).first()
 
             if existing:
-                # Update existing
-                for key, value in data.items():
-                    if value is not None:
-                        setattr(existing, key, value)
+                # Update existing using utility
+                update_model(existing, data)
                 updated += 1
             else:
                 # Create new
@@ -70,11 +76,11 @@ async def run_politician_population():
                 created += 1
 
         db.commit()
-        print(f"Population complete: {created} created, {updated} updated")
+        logger.info(f"Population complete: {created} created, {updated} updated")
 
     except Exception as e:
         db.rollback()
-        print(f"Population failed: {e}")
+        logger.error(f"Population failed: {e}")
         raise e
     finally:
         db.close()
@@ -160,7 +166,6 @@ async def test_votes(bioguide_id: str):
     client = CongressGovClient()
     try:
         # Get raw response to see structure
-        import httpx
         params = {"api_key": settings.congress_gov_api_key, "format": "json", "limit": 3}
         async with httpx.AsyncClient() as http_client:
             response = await http_client.get(
@@ -202,7 +207,6 @@ async def test_house_votes(congress: int = 119, session: int = 1, limit: int = 3
             roll_number = first_vote.get("rollCallNumber") or first_vote.get("rollNumber") or first_vote.get("number")
             if roll_number:
                 # Also get raw responses for debugging
-                import httpx
                 params = {"api_key": settings.congress_gov_api_key, "format": "json"}
 
                 async with httpx.AsyncClient() as http_client:
@@ -380,8 +384,6 @@ async def refresh_finance(limit: int = 50, offset: int = 0, cycle: int = 2024, c
 @router.get("/test-stock-watcher")
 async def test_stock_watcher():
     """Test Stock Watcher APIs to see what they return."""
-    import httpx
-
     results = {
         "house": {"status": "unknown", "count": 0, "sample": [], "error": None, "raw": None},
         "senate": {"status": "unknown", "count": 0, "sample": [], "error": None, "raw": None},
@@ -505,14 +507,14 @@ async def populate_votes(vote_limit: int = 20, congress: int = 119, session: int
             Politician.chamber == "house"
         ).all()
         politician_map = {p.bioguide_id: p for p in politicians}
-        print(f"Loaded {len(politician_map)} House members for vote matching")
+        logger.info(f"Loaded {len(politician_map)} House members for vote matching")
 
         total_votes_added = 0
         votes_processed = 0
 
-        print(f"Fetching House votes for Congress {congress}, Session {session}...")
+        logger.info(f"Fetching House votes for Congress {congress}, Session {session}...")
         votes = await client.get_house_votes(congress=congress, session=session, limit=vote_limit)
-        print(f"Found {len(votes)} House votes")
+        logger.info(f"Found {len(votes)} House votes")
 
         for vote_summary in votes:
             try:
@@ -520,17 +522,17 @@ async def populate_votes(vote_limit: int = 20, congress: int = 119, session: int
                 roll_number = vote_summary.get("rollCallNumber") or vote_summary.get("rollNumber") or vote_summary.get("number")
 
                 if not roll_number:
-                    print(f"Could not find roll number for vote: {vote_summary}")
+                    logger.info(f"Could not find roll number for vote: {vote_summary}")
                     continue
 
                 roll_number = int(roll_number)
-                print(f"Processing House vote #{roll_number}...")
+                logger.info(f"Processing House vote #{roll_number}...")
 
                 # Get member votes for this roll call
                 member_votes = await client.get_house_vote_members(congress, session, roll_number)
 
                 if not member_votes:
-                    print(f"No member votes for House vote #{roll_number}")
+                    logger.info(f"No member votes for House vote #{roll_number}")
                     continue
 
                 # Get vote details for question/result
@@ -616,7 +618,7 @@ async def populate_votes(vote_limit: int = 20, congress: int = 119, session: int
                 await asyncio.sleep(0.5)
 
             except Exception as e:
-                print(f"Error processing vote: {e}")
+                logger.info(f"Error processing vote: {e}")
                 continue
 
         db.commit()
@@ -638,8 +640,6 @@ async def populate_votes(vote_limit: int = 20, congress: int = 119, session: int
 @router.get("/test-senate-votes")
 async def test_senate_votes(congress: int = 119, session: int = 1):
     """Test the Senate votes XML feed to debug any issues."""
-    import httpx
-
     results = {
         "menu_url": f"https://www.senate.gov/legislative/LIS/roll_call_lists/vote_menu_{congress}_{session}.xml",
         "menu_status": None,
@@ -656,7 +656,6 @@ async def test_senate_votes(congress: int = 119, session: int = 1):
             results["menu_status"] = menu_resp.status_code
 
             if menu_resp.status_code == 200:
-                import xml.etree.ElementTree as ET
                 root = ET.fromstring(menu_resp.text)
                 votes = root.findall(".//vote")
                 results["menu_votes_count"] = len(votes)
@@ -708,9 +707,6 @@ async def populate_senate_votes(vote_limit: int = 50, congress: int = 119, sessi
         congress: Congress number (default 119)
         session: Session number (1 or 2, default 1)
     """
-    import httpx
-    import xml.etree.ElementTree as ET
-
     db = SessionLocal()
 
     try:
@@ -725,14 +721,14 @@ async def populate_senate_votes(vote_limit: int = 50, congress: int = 119, sessi
         for s in senators:
             key = (s.state.upper(), s.last_name.upper())
             senator_map[key] = s
-        print(f"Loaded {len(senator_map)} Senators for vote matching")
+        logger.info(f"Loaded {len(senator_map)} Senators for vote matching")
 
         total_votes_added = 0
         votes_processed = 0
         errors = []
 
         # Get vote menu to find available votes
-        print(f"Fetching Senate vote menu for Congress {congress}, Session {session}...")
+        logger.info(f"Fetching Senate vote menu for Congress {congress}, Session {session}...")
 
         async with httpx.AsyncClient() as http_client:
             menu_url = f"https://www.senate.gov/legislative/LIS/roll_call_lists/vote_menu_{congress}_{session}.xml"
@@ -749,7 +745,7 @@ async def populate_senate_votes(vote_limit: int = 50, congress: int = 119, sessi
                 }
                 for v in menu_root.findall(".//vote")
             ]
-        print(f"Found {len(vote_menu)} total Senate votes")
+        logger.info(f"Found {len(vote_menu)} total Senate votes")
 
         # Process most recent votes up to limit
         async with httpx.AsyncClient() as http_client:
@@ -759,7 +755,7 @@ async def populate_senate_votes(vote_limit: int = 50, congress: int = 119, sessi
                     if not vote_num:
                         continue
 
-                    print(f"Processing Senate vote #{vote_num}...")
+                    logger.info(f"Processing Senate vote #{vote_num}...")
 
                     # Get detailed roll call with member votes
                     roll_url = f"https://www.senate.gov/legislative/LIS/roll_call_votes/vote{congress}{session}/vote_{congress}_{session}_{vote_num:05d}.xml"
@@ -769,7 +765,7 @@ async def populate_senate_votes(vote_limit: int = 50, congress: int = 119, sessi
 
                     members = roll_root.findall(".//member")
                     if not members:
-                        print(f"No member votes for Senate vote #{vote_num}")
+                        logger.info(f"No member votes for Senate vote #{vote_num}")
                         continue
 
                     # Parse vote date
@@ -869,7 +865,7 @@ async def populate_senate_votes(vote_limit: int = 50, congress: int = 119, sessi
 
                 except Exception as e:
                     error_msg = f"Error processing Senate vote {vote_summary.get('vote_number')}: {str(e)}"
-                    print(error_msg)
+                    logger.info(error_msg)
                     errors.append(error_msg)
                     continue
 
@@ -919,11 +915,11 @@ async def populate_sponsored_bills(limit: int = 50, offset: int = 0, congress: i
 
         for politician in politicians:
             try:
-                print(f"Fetching sponsored bills for {politician.first_name} {politician.last_name} ({politician.bioguide_id})...")
+                logger.info(f"Fetching sponsored bills for {politician.first_name} {politician.last_name} ({politician.bioguide_id})...")
 
                 # Fetch sponsored legislation
                 sponsored = await client.get_member_sponsored_legislation(politician.bioguide_id, limit=50)
-                print(f"  Found {len(sponsored)} sponsored items")
+                logger.info(f"  Found {len(sponsored)} sponsored items")
 
                 for legislation in sponsored:
                     bill_type = (legislation.get("type") or "").lower()
@@ -970,7 +966,7 @@ async def populate_sponsored_bills(limit: int = 50, offset: int = 0, congress: i
 
             except Exception as e:
                 error_msg = f"Error processing {politician.bioguide_id}: {str(e)}"
-                print(error_msg)
+                logger.info(error_msg)
                 errors.append(error_msg)
                 db.rollback()
                 continue
@@ -997,8 +993,6 @@ async def clear_votes(congress: int = 119):
     try:
         # Delete votes that match the congress (extracted from vote_id pattern)
         # vote_id format: {bioguide_id}-{roll_number}-{congress}-{session}-{chamber}
-        from sqlalchemy import delete
-
         # Delete all votes and bills (they'll be recreated with proper links)
         deleted_votes = db.execute(
             delete(Vote).where(Vote.vote_id.like(f"%-%-{congress}-%"))
@@ -1037,10 +1031,7 @@ async def populate_bill_summaries(limit: int = 50, congress: int = 119):
     db = SessionLocal()
 
     try:
-        import re
-
         # Get bills without text summaries (NULL or URL-only)
-        from sqlalchemy import or_
         bills = db.query(Bill).filter(
             Bill.congress == congress,
             or_(
@@ -1174,7 +1165,7 @@ async def populate_finance(limit: int = 50, cycle: int = 2024, chamber: str | No
                 await asyncio.sleep(0.3)
 
             except Exception as e:
-                print(f"Error processing finance for {politician.full_name}: {e}")
+                logger.info(f"Error processing finance for {politician.full_name}: {e}")
                 continue
 
         db.commit()
@@ -1225,7 +1216,7 @@ async def populate_donors(limit: int = 50, cycle: int = 2024):
 
         for politician in politicians_with_finance:
             try:
-                print(f"Fetching donors for {politician.first_name} {politician.last_name}...")
+                logger.info(f"Fetching donors for {politician.first_name} {politician.last_name}...")
 
                 # Search for candidate in FEC
                 full_name = f"{politician.last_name}, {politician.first_name}"
@@ -1284,7 +1275,7 @@ async def populate_donors(limit: int = 50, cycle: int = 2024):
 
             except Exception as e:
                 error_msg = f"Error processing donors for {politician.bioguide_id}: {str(e)}"
-                print(error_msg)
+                logger.info(error_msg)
                 errors.append(error_msg)
                 db.rollback()
                 await asyncio.sleep(3.0)  # Extra delay after error
@@ -1368,9 +1359,9 @@ async def populate_stocks():
         unmatched = 0
 
         # Fetch all trades
-        print("Fetching stock trades...")
+        logger.info("Fetching stock trades...")
         all_trades = await client.get_all_trades()
-        print(f"Found {len(all_trades)} trades")
+        logger.info(f"Found {len(all_trades)} trades")
 
         for trade in all_trades:
             politician_id = match_trade_to_politician(trade, politician_list)
@@ -1543,8 +1534,23 @@ async def populate_all_data(background_tasks: BackgroundTasks):
 
 async def run_full_population():
     """Background task to run all population steps."""
-    print("Starting full data population...")
+    logger.info("Starting full data population...")
 
-    # Note: These would need to be called as actual functions, not HTTP endpoints
-    # For simplicity, we'll run them in sequence
-    print("Full population complete!")
+    try:
+        # Step 1: Populate politicians
+        logger.info("Step 1/4: Populating politicians...")
+        await run_politician_population()
+
+        # Step 2: Populate votes (would need Congress API key)
+        logger.info("Step 2/4: Skipping votes (use separate endpoint)")
+
+        # Step 3: Populate finance (would need FEC API key)
+        logger.info("Step 3/4: Skipping finance (use separate endpoint)")
+
+        # Step 4: Calculate transparency scores
+        logger.info("Step 4/4: Skipping transparency scores (use separate endpoint)")
+
+        logger.info("Full population complete!")
+    except Exception as e:
+        logger.error(f"Full population failed: {e}")
+        raise
