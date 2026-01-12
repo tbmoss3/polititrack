@@ -166,8 +166,9 @@ def _calculate_transparency_breakdown(politician: Politician, db: Session) -> Tr
                     trans_date = datetime.fromisoformat(str(trade.transaction_date))
                     disc_date = datetime.fromisoformat(str(trade.disclosure_date))
                     delays.append((disc_date - trans_date).days)
-                except:
-                    pass
+                except (ValueError, TypeError):
+                    # Skip trades with invalid date formats
+                    continue
         if delays:
             avg_delay = sum(delays) / len(delays)
             if avg_delay <= 30:

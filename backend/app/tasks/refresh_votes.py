@@ -1,11 +1,16 @@
 """Celery task to refresh voting records from ProPublica."""
 
 import asyncio
+import logging
 import uuid
+from sqlalchemy import select
+
 from app.tasks.celery_app import celery_app
 from app.database import SessionLocal
 from app.models import Politician, Vote, Bill
 from app.services.propublica import ProPublicaClient
+
+logger = logging.getLogger(__name__)
 
 
 @celery_app.task(name="app.tasks.refresh_votes.refresh_all_votes")
@@ -21,7 +26,9 @@ async def _refresh_all_votes_async():
 
     try:
         total_votes = 0
-        politicians = db.query(Politician).filter(Politician.in_office == True).all()
+        politicians = db.execute(
+            select(Politician).where(Politician.in_office == True)
+        ).scalars().all()
 
         for politician in politicians:
             votes_data = await client.get_member_votes(politician.bioguide_id)
@@ -29,16 +36,21 @@ async def _refresh_all_votes_async():
             for vote_data in votes_data[:100]:  # Limit to recent 100 votes per member
                 vote_id = f"{politician.bioguide_id}-{vote_data.get('roll_call')}-{vote_data.get('congress')}-{vote_data.get('session')}"
 
-                # Check if vote exists
-                existing = db.query(Vote).filter(Vote.vote_id == vote_id).first()
+                # Check if vote exists using modern select() API
+                existing = db.execute(
+                    select(Vote).where(Vote.vote_id == vote_id)
+                ).scalar_one_or_none()
                 if existing:
                     continue
 
-                # Find associated bill if any
+                # Find associated bill if any - use exact match instead of ILIKE
                 bill_id = None
                 bill_slug = vote_data.get("bill", {}).get("bill_id")
                 if bill_slug:
-                    bill = db.query(Bill).filter(Bill.bill_id.ilike(f"%{bill_slug}%")).first()
+                    # Use exact match for better performance (index-friendly)
+                    bill = db.execute(
+                        select(Bill).where(Bill.bill_id == bill_slug)
+                    ).scalar_one_or_none()
                     if bill:
                         bill_id = bill.id
 
@@ -57,10 +69,12 @@ async def _refresh_all_votes_async():
                 total_votes += 1
 
         db.commit()
+        logger.info(f"Vote refresh complete: {total_votes} votes added")
         return {"total_votes_added": total_votes}
 
     except Exception as e:
         db.rollback()
+        logger.error(f"Vote refresh failed: {e}")
         raise e
     finally:
         db.close()

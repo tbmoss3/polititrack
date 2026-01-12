@@ -1,5 +1,6 @@
 """Stock trades API endpoints."""
 
+import logging
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, select
@@ -7,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models import Politician, StockTrade
+from app.api.dependencies import get_politician_or_404
 from app.schemas.stock_trade import (
     StockTradeResponse,
     StockTradeListResponse,
@@ -14,6 +16,8 @@ from app.schemas.stock_trade import (
     StockTradeAnalysis,
     NetWorthTrend,
 )
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -24,12 +28,9 @@ async def get_politician_stock_trades(
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=100),
     db: Session = Depends(get_db),
+    politician: Politician = Depends(get_politician_or_404),
 ):
     """Get stock trades for a specific politician."""
-    politician = db.get(Politician, politician_id)
-    if not politician:
-        raise HTTPException(status_code=404, detail="Politician not found")
-
     query = select(StockTrade).where(StockTrade.politician_id == politician_id)
 
     # Count total
@@ -42,12 +43,14 @@ async def get_politician_stock_trades(
 
     trades = db.execute(query).scalars().all()
 
+    total_pages = (total + page_size - 1) // page_size if total > 0 else 0
+
     return StockTradeListResponse(
         items=[_to_stock_trade_response(t) for t in trades],
         total=total,
         page=page,
         page_size=page_size,
-        total_pages=(total + page_size - 1) // page_size,
+        total_pages=total_pages,
     )
 
 
@@ -55,12 +58,9 @@ async def get_politician_stock_trades(
 async def get_stock_trade_analysis(
     politician_id: UUID,
     db: Session = Depends(get_db),
+    politician: Politician = Depends(get_politician_or_404),
 ):
     """Get comprehensive stock trade analysis for a politician."""
-    politician = db.get(Politician, politician_id)
-    if not politician:
-        raise HTTPException(status_code=404, detail="Politician not found")
-
     # Get all trades
     query = (
         select(StockTrade)
@@ -75,7 +75,7 @@ async def get_stock_trade_analysis(
     sales = [t for t in trades if t.transaction_type == "sale"]
 
     avg_disclosure_days = (
-        sum(t.disclosure_delay_days for t in trades) / total_trades
+        sum(t.disclosure_delay_days for t in trades if t.disclosure_delay_days) / total_trades
         if total_trades > 0
         else 0.0
     )
@@ -102,9 +102,29 @@ async def get_stock_trade_analysis(
     )
 
     # Calculate net worth trend (simplified - cumulative trades over time)
+    net_worth_trend = _calculate_net_worth_trend(trades)
+
+    # Calculate disclosure compliance score (0-100)
+    compliance_score = _calculate_compliance_score(avg_disclosure_days)
+
+    # Recent trades (last 10)
+    recent_trades = trades[-10:] if trades else []
+    recent_trades.reverse()
+
+    return StockTradeAnalysis(
+        summary=summary,
+        net_worth_trend=net_worth_trend,
+        recent_trades=[_to_stock_trade_response(t) for t in recent_trades],
+        disclosure_compliance_score=compliance_score,
+    )
+
+
+def _calculate_net_worth_trend(trades: list[StockTrade]) -> list[NetWorthTrend]:
+    """Calculate cumulative net worth trend from trades."""
     net_worth_trend = []
     cumulative_min = 0
     cumulative_max = 0
+
     for i, trade in enumerate(trades):
         if trade.transaction_type == "purchase":
             cumulative_min += trade.amount_min or 0
@@ -122,29 +142,21 @@ async def get_stock_trade_analysis(
             )
         )
 
-    # Calculate disclosure compliance score (0-100)
-    # Full points if avg disclosure < 30 days, 0 if > 90 days
+    return net_worth_trend
+
+
+def _calculate_compliance_score(avg_disclosure_days: float) -> float:
+    """Calculate disclosure compliance score based on average delay."""
     if avg_disclosure_days <= 30:
-        compliance_score = 100.0
+        return 100.0
     elif avg_disclosure_days <= 45:
-        compliance_score = 80.0
+        return 80.0
     elif avg_disclosure_days <= 60:
-        compliance_score = 60.0
+        return 60.0
     elif avg_disclosure_days <= 90:
-        compliance_score = 40.0
+        return 40.0
     else:
-        compliance_score = 20.0
-
-    # Recent trades (last 10)
-    recent_trades = trades[-10:] if trades else []
-    recent_trades.reverse()
-
-    return StockTradeAnalysis(
-        summary=summary,
-        net_worth_trend=net_worth_trend,
-        recent_trades=[_to_stock_trade_response(t) for t in recent_trades],
-        disclosure_compliance_score=compliance_score,
-    )
+        return 20.0
 
 
 @router.get("/{trade_id}", response_model=StockTradeResponse)

@@ -1,12 +1,14 @@
 """Finance API endpoints."""
 
+import logging
 from uuid import UUID
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models import Politician, CampaignFinance, TopDonor
+from app.api.dependencies import get_politician_or_404
 from app.schemas.finance import (
     CampaignFinanceResponse,
     CampaignFinanceListResponse,
@@ -15,6 +17,8 @@ from app.schemas.finance import (
     FinanceSummary,
 )
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter()
 
 
@@ -22,12 +26,9 @@ router = APIRouter()
 async def get_politician_finance(
     politician_id: UUID,
     db: Session = Depends(get_db),
+    politician: Politician = Depends(get_politician_or_404),
 ):
     """Get campaign finance history for a politician."""
-    politician = db.get(Politician, politician_id)
-    if not politician:
-        raise HTTPException(status_code=404, detail="Politician not found")
-
     query = (
         select(CampaignFinance)
         .where(CampaignFinance.politician_id == politician_id)
@@ -53,12 +54,9 @@ async def get_top_donors(
     cycle: int | None = Query(None, description="Election cycle year"),
     limit: int = Query(20, ge=1, le=50),
     db: Session = Depends(get_db),
+    politician: Politician = Depends(get_politician_or_404),
 ):
     """Get top donors for a politician."""
-    politician = db.get(Politician, politician_id)
-    if not politician:
-        raise HTTPException(status_code=404, detail="Politician not found")
-
     query = select(TopDonor).where(TopDonor.politician_id == politician_id)
 
     if cycle:
@@ -83,12 +81,9 @@ async def get_top_donors(
 async def get_finance_summary(
     politician_id: UUID,
     db: Session = Depends(get_db),
+    politician: Politician = Depends(get_politician_or_404),
 ):
     """Get comprehensive financial summary for a politician."""
-    politician = db.get(Politician, politician_id)
-    if not politician:
-        raise HTTPException(status_code=404, detail="Politician not found")
-
     # Get all campaign finance records
     finance_query = (
         select(CampaignFinance)

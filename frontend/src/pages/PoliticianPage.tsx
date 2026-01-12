@@ -11,7 +11,7 @@ import TransparencyScore from '../components/Dashboard/TransparencyScore'
 import VotingHistory from '../components/Dashboard/VotingHistory'
 import FinanceChart from '../components/Dashboard/FinanceChart'
 import Loading from '../components/common/Loading'
-import clsx from 'clsx'
+import { getPartyBadgeClass, getPartyName } from '../utils'
 
 export default function PoliticianPage() {
   const { id } = useParams<{ id: string }>()
@@ -61,18 +61,7 @@ export default function PoliticianPage() {
     )
   }
 
-  const partyClass = clsx('party-badge text-lg', {
-    'party-badge-d': politician.party === 'D',
-    'party-badge-r': politician.party === 'R',
-    'party-badge-i': politician.party === 'I' || politician.party === 'ID',
-  })
-
-  const partyName = {
-    D: 'Democrat',
-    R: 'Republican',
-    I: 'Independent',
-    ID: 'Independent',
-  }[politician.party || 'I'] || 'Unknown'
+  const partyClass = getPartyBadgeClass(politician.party, 'text-lg')
 
   return (
     <div className="space-y-6">
@@ -97,7 +86,7 @@ export default function PoliticianPage() {
                 {politician.district && ` District ${politician.district}`}
               </p>
               <p className="text-sm text-gray-500 mt-1">
-                {partyName} • {politician.chamber === 'senate' ? 'U.S. Senate' : 'U.S. House of Representatives'}
+                {getPartyName(politician.party)} • {politician.chamber === 'senate' ? 'U.S. Senate' : 'U.S. House of Representatives'}
               </p>
             </div>
           </div>
