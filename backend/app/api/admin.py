@@ -312,13 +312,14 @@ async def refresh_finance(limit: int = 50, offset: int = 0, cycle: int = 2024, c
 
         for politician in politicians:
             try:
-                # Search for candidate in FEC
+                # Search for candidate in FEC with office filter
                 full_name = f"{politician.last_name}, {politician.first_name}"
-                candidates = await client.search_candidates(full_name, politician.state)
+                office = "S" if politician.chamber == "senate" else "H"
+                candidates = await client.search_candidates(full_name, politician.state, office)
 
                 if not candidates:
-                    # Try just last name
-                    candidates = await client.search_candidates(politician.last_name, politician.state)
+                    # Try just last name with office filter
+                    candidates = await client.search_candidates(politician.last_name, politician.state, office)
 
                 if not candidates:
                     continue
@@ -330,8 +331,12 @@ async def refresh_finance(limit: int = 50, offset: int = 0, cycle: int = 2024, c
                 if not candidate_id:
                     continue
 
-                # Get financial totals
+                # Get financial totals - try current cycle, then previous if empty
                 totals = await client.get_candidate_totals(candidate_id, cycle)
+
+                if not totals and cycle > 2020:
+                    # Try previous cycle (Senators may not have current cycle data)
+                    totals = await client.get_candidate_totals(candidate_id, cycle - 2)
 
                 if totals:
                     for total in totals:

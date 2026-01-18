@@ -32,13 +32,14 @@ class FECClient:
             response.raise_for_status()
             return response.json()
 
-    async def search_candidates(self, name: str, state: str | None = None) -> list[dict]:
+    async def search_candidates(self, name: str, state: str | None = None, office: str | None = None) -> list[dict]:
         """
         Search for candidates by name.
 
         Args:
             name: Candidate name to search for
             state: Optional state filter (two-letter code)
+            office: Optional office filter ('H' for House, 'S' for Senate, 'P' for President)
 
         Returns:
             List of matching candidate dictionaries
@@ -46,6 +47,8 @@ class FECClient:
         params = {"q": name, "per_page": 20}
         if state:
             params["state"] = state
+        if office:
+            params["office"] = office
 
         data = await self._request("candidates/search/", params)
         return data.get("results", [])
