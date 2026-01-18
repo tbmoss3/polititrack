@@ -13,7 +13,7 @@ export const PARTY_NAMES: Record<string, string> = {
 /**
  * Get the CSS class for a party badge.
  */
-export function getPartyBadgeClass(party: string | undefined, extraClasses?: string): string {
+export function getPartyBadgeClass(party: string | null | undefined, extraClasses?: string): string {
   return clsx('party-badge', extraClasses, {
     'party-badge-d': party === 'D',
     'party-badge-r': party === 'R',
@@ -24,6 +24,6 @@ export function getPartyBadgeClass(party: string | undefined, extraClasses?: str
 /**
  * Get the full name for a party code.
  */
-export function getPartyName(party: string | undefined): string {
+export function getPartyName(party: string | null | undefined): string {
   return PARTY_NAMES[party || 'I'] || 'Unknown'
 }
