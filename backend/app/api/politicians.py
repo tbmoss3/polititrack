@@ -25,6 +25,7 @@ async def list_politicians(
     party: str | None = Query(None),
     chamber: str | None = Query(None),
     in_office: bool | None = Query(None),
+    q: str | None = Query(None, min_length=2, description="Search by name"),
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=100),
     db: Session = Depends(get_db),
@@ -40,6 +41,11 @@ async def list_politicians(
         query = query.where(Politician.chamber == chamber.lower())
     if in_office is not None:
         query = query.where(Politician.in_office == in_office)
+    if q:
+        search_term = f"%{q.lower()}%"
+        query = query.where(
+            func.lower(Politician.first_name + ' ' + Politician.last_name).like(search_term)
+        )
 
     # Count total
     count_query = select(func.count()).select_from(query.subquery())

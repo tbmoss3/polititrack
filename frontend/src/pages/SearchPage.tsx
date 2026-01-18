@@ -9,11 +9,19 @@ export default function SearchPage() {
   const party = searchParams.get('party')
   const chamber = searchParams.get('chamber')
   const state = searchParams.get('state')
+  const q = searchParams.get('q')
   const page = parseInt(searchParams.get('page') || '1')
 
   const { data, isLoading } = useQuery({
-    queryKey: ['politicians', { party, chamber, state, page }],
-    queryFn: () => listPoliticians({ party: party || undefined, chamber: chamber || undefined, state: state || undefined, page, page_size: 50 }),
+    queryKey: ['politicians', { party, chamber, state, q, page }],
+    queryFn: () => listPoliticians({
+      party: party || undefined,
+      chamber: chamber || undefined,
+      state: state || undefined,
+      q: q || undefined,
+      page,
+      page_size: 50
+    }),
   })
 
   const partyLabels: Record<string, string> = {
@@ -37,11 +45,17 @@ export default function SearchPage() {
     return <Loading message="Loading politicians..." />
   }
 
+  const getTitle = () => {
+    if (q) return `Search: "${q}"`
+    if (party) return partyLabels[party] || 'All Politicians'
+    return 'All Politicians'
+  }
+
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-bold text-gray-900">
-          {party ? partyLabels[party] || 'All Politicians' : 'All Politicians'}
+          {getTitle()}
         </h1>
         <p className="text-gray-600 mt-2">
           {data?.total || 0} members found
@@ -78,13 +92,13 @@ export default function SearchPage() {
             </select>
           </div>
 
-          {(party || chamber || state) && (
+          {(party || chamber || state || q) && (
             <div className="flex items-end">
               <button
                 onClick={() => setSearchParams({})}
                 className="text-sm text-blue-600 hover:text-blue-800 hover:underline"
               >
-                Clear filters
+                Clear {q ? 'search' : 'filters'}
               </button>
             </div>
           )}

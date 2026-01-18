@@ -16,6 +16,7 @@ export async function getPoliticians(params?: {
   state?: string
   party?: string
   chamber?: string
+  q?: string
   page?: number
   page_size?: number
 }): Promise<PoliticianListResponse> {
