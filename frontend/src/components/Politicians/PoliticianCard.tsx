@@ -28,7 +28,8 @@ function PoliticianCardComponent({ politician }: PoliticianCardProps) {
       <div className="flex items-start space-x-4">
         <div className="flex-shrink-0">
           <div className="w-16 h-16 bg-gray-200 rounded-full flex items-center justify-center text-2xl">
-            {politician.chamber === 'senate' ? '🏛️' : '🏠'}
+            <span aria-hidden="true">{politician.chamber === 'senate' ? '🏛️' : '🏠'}</span>
+            <span className="sr-only">{politician.chamber === 'senate' ? 'Senator' : 'Representative'}</span>
           </div>
         </div>
 
@@ -45,7 +46,7 @@ function PoliticianCardComponent({ politician }: PoliticianCardProps) {
             {politician.district && ` District ${politician.district}`}
           </p>
 
-          <p className="text-xs text-gray-500 mt-1">
+          <p className="text-xs text-gray-600 mt-1">
             {getPartyName(politician.party)} • {politician.chamber === 'senate' ? 'Senate' : 'House'}
           </p>
         </div>

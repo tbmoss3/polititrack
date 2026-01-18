@@ -64,7 +64,7 @@ export default function Sidebar() {
                 currentParty === 'R' ? 'bg-red-100 text-red-800' : 'text-gray-700 hover:bg-gray-100'
               )}
             >
-              🔴 Republicans
+              <span aria-hidden="true">🔴 </span>Republicans
             </button>
             <button
               onClick={() => handlePartyFilter('D')}
@@ -73,7 +73,7 @@ export default function Sidebar() {
                 currentParty === 'D' ? 'bg-blue-100 text-blue-800' : 'text-gray-700 hover:bg-gray-100'
               )}
             >
-              🔵 Democrats
+              <span aria-hidden="true">🔵 </span>Democrats
             </button>
             <button
               onClick={() => handlePartyFilter('I')}
@@ -82,7 +82,7 @@ export default function Sidebar() {
                 currentParty === 'I' ? 'bg-purple-100 text-purple-800' : 'text-gray-700 hover:bg-gray-100'
               )}
             >
-              🟣 Independents
+              <span aria-hidden="true">🟣 </span>Independents
             </button>
           </div>
         </div>
@@ -110,10 +110,10 @@ export default function Sidebar() {
         </div>
 
         <div>
-          <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">
+          <h3 className="text-sm font-semibold text-gray-600 uppercase tracking-wider mb-3">
             Data Sources
           </h3>
-          <ul className="text-xs text-gray-500 space-y-1">
+          <ul className="text-xs text-gray-600 space-y-1">
             <li>Congress.gov API</li>
             <li>FEC Campaign Finance</li>
             <li>Capitol Trades</li>

@@ -250,10 +250,11 @@ export default function USMap({ statesData, onStateClick }: USMapProps) {
 
   return (
     <div className="relative w-full h-full min-h-[500px] rounded-lg overflow-hidden">
-      <div ref={mapContainer} className="absolute inset-0" />
+      <div ref={mapContainer} className="absolute inset-0" role="img" aria-label="Interactive US map showing political representatives by state. Click on a state to view details." />
       {!mapLoaded && (
-        <div className="absolute inset-0 flex items-center justify-center bg-gray-100">
+        <div className="absolute inset-0 flex items-center justify-center bg-gray-100" role="status" aria-label="Loading map">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+          <span className="sr-only">Loading map...</span>
         </div>
       )}
     </div>

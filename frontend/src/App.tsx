@@ -10,10 +10,16 @@ import SearchPage from './pages/SearchPage'
 function App() {
   return (
     <div className="min-h-screen bg-gray-50">
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:absolute focus:top-4 focus:left-4 focus:z-50 focus:bg-blue-600 focus:text-white focus:px-4 focus:py-2 focus:rounded"
+      >
+        Skip to main content
+      </a>
       <Header />
       <div className="flex">
         <Sidebar />
-        <main className="flex-1 p-6">
+        <main id="main-content" className="flex-1 p-6">
           <Routes>
             <Route path="/" element={<HomePage />} />
             <Route path="/state/:stateCode" element={<StatePage />} />

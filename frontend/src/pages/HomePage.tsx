@@ -41,7 +41,7 @@ export default function HomePage() {
       <div className="grid md:grid-cols-3 gap-6">
         <div className="card">
           <div className="flex items-center space-x-3">
-            <span className="text-3xl">🏛️</span>
+            <span className="text-3xl" aria-hidden="true">🏛️</span>
             <div>
               <p className="text-2xl font-bold text-gray-900">535</p>
               <p className="text-sm text-gray-600">Congress Members</p>
@@ -51,7 +51,7 @@ export default function HomePage() {
 
         <div className="card">
           <div className="flex items-center space-x-3">
-            <span className="text-3xl">📊</span>
+            <span className="text-3xl" aria-hidden="true">📊</span>
             <div>
               <p className="text-2xl font-bold text-gray-900">100</p>
               <p className="text-sm text-gray-600">Senators</p>
@@ -61,7 +61,7 @@ export default function HomePage() {
 
         <div className="card">
           <div className="flex items-center space-x-3">
-            <span className="text-3xl">🏠</span>
+            <span className="text-3xl" aria-hidden="true">🏠</span>
             <div>
               <p className="text-2xl font-bold text-gray-900">435</p>
               <p className="text-sm text-gray-600">Representatives</p>
